@@ -121,37 +121,10 @@ func dir2QidType(d os.FileInfo) uint8 {
 	return ret
 }
 
-func dir2Npmode(d os.FileInfo, dotu bool) uint32 {
+func dir2Npmode(d os.FileInfo) uint32 {
 	ret := uint32(d.Mode() & 0777)
 	if d.IsDir() {
 		ret |= go9p.DMDIR
-	}
-
-	if dotu {
-		mode := d.Mode()
-		if mode&os.ModeSymlink != 0 {
-			ret |= go9p.DMSYMLINK
-		}
-
-		if mode&os.ModeSocket != 0 {
-			ret |= go9p.DMSOCKET
-		}
-
-		if mode&os.ModeNamedPipe != 0 {
-			ret |= go9p.DMNAMEDPIPE
-		}
-
-		if mode&os.ModeDevice != 0 {
-			ret |= go9p.DMDEVICE
-		}
-
-		if mode&os.ModeSetuid != 0 {
-			ret |= go9p.DMSETUID
-		}
-
-		if mode&os.ModeSetgid != 0 {
-			ret |= go9p.DMSETGID
-		}
 	}
 
 	return ret
@@ -163,7 +136,7 @@ type ufsDir struct {
 	go9p.Dir
 }
 
-func dir2Dir(path string, d os.FileInfo, dotu bool, upool go9p.Users) (*go9p.Dir, error) {
+func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	if r := recover(); r != nil {
 		fmt.Print("stat failed: ", r)
 		return nil, &os.PathError{"dir2Dir", path, nil}
@@ -176,16 +149,11 @@ func dir2Dir(path string, d os.FileInfo, dotu bool, upool go9p.Users) (*go9p.Dir
 
 	dir := new(ufsDir)
 	dir.Qid = *dir2Qid(d)
-	dir.Mode = dir2Npmode(d, dotu)
+	dir.Mode = dir2Npmode(d)
 	dir.Atime = uint32(0 /*atime(sysMode).Unix()*/)
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
 	dir.Name = path[strings.LastIndex(path, "/")+1:]
-
-	if dotu {
-		dir.dotu(path, d, upool, sysMode)
-		return &dir.Dir, nil
-	}
 
 	unixUid := int(sysMode.Uid)
 	unixGid := int(sysMode.Gid)
@@ -211,36 +179,6 @@ func dir2Dir(path string, d os.FileInfo, dotu bool, upool go9p.Users) (*go9p.Dir
 		}
 	}
 	return &dir.Dir, nil
-}
-
-func (dir *ufsDir) dotu(path string, d os.FileInfo, upool go9p.Users, sysMode *syscall.Stat_t) {
-	u := upool.Uid2User(int(sysMode.Uid))
-	g := upool.Gid2Group(int(sysMode.Gid))
-	dir.Uid = u.Name()
-	if dir.Uid == "" {
-		dir.Uid = "none"
-	}
-
-	dir.Gid = g.Name()
-	if dir.Gid == "" {
-		dir.Gid = "none"
-	}
-	dir.Muid = "none"
-	dir.Ext = ""
-	dir.Uidnum = uint32(u.Id())
-	dir.Gidnum = uint32(g.Id())
-	dir.Muidnum = go9p.NOUID
-	if d.Mode()&os.ModeSymlink != 0 {
-		var err error
-		dir.Ext, err = os.Readlink(path)
-		if err != nil {
-			dir.Ext = ""
-		}
-	} else if isBlock(d) {
-		dir.Ext = fmt.Sprintf("b %d %d", sysMode.Rdev>>24, sysMode.Rdev&0xFFFFFF)
-	} else if isChar(d) {
-		dir.Ext = fmt.Sprintf("c %d %d", sysMode.Rdev>>24, sysMode.Rdev&0xFFFFFF)
-	}
 }
 
 func (*Ufs) ConnOpened(conn *go9p.Conn) {
@@ -456,7 +394,7 @@ func (*Ufs) Read(req *go9p.SrvReq) {
 			fid.direntends = nil
 			for i := 0; i < len(fid.dirs); i++ {
 				path := fid.path + "/" + fid.dirs[i].Name()
-				st, _ := dir2Dir(path, fid.dirs[i], req.Conn.Dotu, req.Conn.Srv.Upool)
+				st, _ := dir2Dir(path, fid.dirs[i], req.Conn.Srv.Upool)
 				if st == nil {
 					continue
 				}
@@ -553,7 +491,7 @@ func (*Ufs) Stat(req *go9p.SrvReq) {
 		return
 	}
 
-	st, derr := dir2Dir(fid.path, fid.st, req.Conn.Dotu, req.Conn.Srv.Upool)
+	st, derr := dir2Dir(fid.path, fid.st, req.Conn.Srv.Upool)
 	if st == nil {
 		req.RespondError(derr)
 		return
