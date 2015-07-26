@@ -7,6 +7,7 @@ package wwwfs
 import (
 	"flag"
 	"fmt"
+	"github.com/rminnich/go9p"
 	"io"
 	"log"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"github.com/rminnich/go9p"
 )
 
 type ufsFid struct {
