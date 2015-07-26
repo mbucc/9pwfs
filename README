@@ -1,0 +1,13 @@
+wwwfs
+A 9p service that authorizes file access based on non-OS (ie "www") users.
+
+STATUS: work-in-progress
+
+To install:
+  export GOPATH=~mbucc/go
+  go get -a github.com/mbucc/wwwfs
+  go get -a github.com/mbucc/wwwfs/wwwfs
+  go install -a github.com/mbucc/wwwfs/wwwfs
+
+~/go/bin/wwwfs
+
