@@ -1,5 +1,4 @@
-wwwfs
-A 9p service that authorizes file access based on non-OS (ie "www") users.
+A 9p service that authorizes file access based on non-OS (AKA "virtual") users.
 
 STATUS: work-in-progress
 
