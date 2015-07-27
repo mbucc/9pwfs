@@ -5,7 +5,6 @@
 package wwwfs
 
 import (
-	"flag"
 	"fmt"
 	"github.com/rminnich/go9p"
 	"io"
@@ -13,12 +12,15 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"sort"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
+
+// Exists in every directory, defines which virtual user and group own each file.
+const ownershipFile = ".ownership"
 
 type ufsFid struct {
 	path       string
@@ -28,9 +30,11 @@ type ufsFid struct {
 	dirents    []byte
 	diroffset  uint64
 	st         os.FileInfo
+	user       string
+	group      string
 }
 
-type Ufs struct {
+type WwwFs struct {
 	go9p.Srv
 	Root string
 }
@@ -60,6 +64,18 @@ func isChar(d os.FileInfo) bool {
 	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFCHR
 }
 
+func (fid *ufsFid) setOwnership() *go9p.Error {
+	fn := filepath.Join(filepath.Dir(fid.path), ownershipFile)
+	_, err := os.OpenFile(filepath.Join(fn), os.O_RDONLY, 0)
+
+	// Can't find ownership file, so deny access (the default).
+	if os.IsNotExist(err) {
+		return &go9p.Error{"permission denied", 17}
+	}
+
+	return nil
+}
+
 func (fid *ufsFid) stat() *go9p.Error {
 	var err error
 
@@ -67,7 +83,6 @@ func (fid *ufsFid) stat() *go9p.Error {
 	if err != nil {
 		return toError(err)
 	}
-
 	return nil
 }
 
@@ -171,29 +186,22 @@ func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 		dir.Gid = g.Username
 	}
 
-	/* For Akaros, we use the Muid as the link value. */
-	if *Akaros && (d.Mode()&os.ModeSymlink != 0) {
-		dir.Muid, err = os.Readlink(path)
-		if err == nil {
-			dir.Mode |= go9p.DMSYMLINK
-		}
-	}
 	return &dir.Dir, nil
 }
 
-func (*Ufs) ConnOpened(conn *go9p.Conn) {
+func (*WwwFs) ConnOpened(conn *go9p.Conn) {
 	if conn.Srv.Debuglevel > 0 {
 		log.Println("connected")
 	}
 }
 
-func (*Ufs) ConnClosed(conn *go9p.Conn) {
+func (*WwwFs) ConnClosed(conn *go9p.Conn) {
 	if conn.Srv.Debuglevel > 0 {
 		log.Println("disconnected")
 	}
 }
 
-func (*Ufs) FidDestroy(sfid *go9p.SrvFid) {
+func (*WwwFs) FidDestroy(sfid *go9p.SrvFid) {
 	var fid *ufsFid
 
 	if sfid.Aux == nil {
@@ -206,7 +214,7 @@ func (*Ufs) FidDestroy(sfid *go9p.SrvFid) {
 	}
 }
 
-func (ufs *Ufs) Attach(req *go9p.SrvReq) {
+func (ufs *WwwFs) Attach(req *go9p.SrvReq) {
 	if req.Afid != nil {
 		req.RespondError(go9p.Enoauth)
 		return
@@ -230,9 +238,9 @@ func (ufs *Ufs) Attach(req *go9p.SrvReq) {
 	req.RespondRattach(qid)
 }
 
-func (*Ufs) Flush(req *go9p.SrvReq) {}
+func (*WwwFs) Flush(req *go9p.SrvReq) {}
 
-func (*Ufs) Walk(req *go9p.SrvReq) {
+func (*WwwFs) Walk(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	tc := req.Tc
 
@@ -270,13 +278,23 @@ func (*Ufs) Walk(req *go9p.SrvReq) {
 	req.RespondRwalk(wqids[0:i])
 }
 
-func (*Ufs) Open(req *go9p.SrvReq) {
+func (wfs *WwwFs) Open(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	tc := req.Tc
 	err := fid.stat()
 	if err != nil {
 		req.RespondError(err)
 		return
+	}
+
+	// If not Root directory, make sure virtual user had permssion to open file.
+	if filepath.Clean(fid.path) != wfs.Root {
+fmt.Printf("fp1 = '%s'\n", filepath.Clean(fid.path))
+fmt.Printf("fp2 = '%s'\n", wfs.Root)
+		if err9 := fid.setOwnership(); err9 != nil {
+			req.RespondError(err9)
+			return
+		}
 	}
 
 	var e error
@@ -289,7 +307,7 @@ func (*Ufs) Open(req *go9p.SrvReq) {
 	req.RespondRopen(dir2Qid(fid.st), 0)
 }
 
-func (*Ufs) Create(req *go9p.SrvReq) {
+func (*WwwFs) Create(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	tc := req.Tc
 	err := fid.stat()
@@ -361,7 +379,7 @@ func (*Ufs) Create(req *go9p.SrvReq) {
 	req.RespondRcreate(dir2Qid(fid.st), 0)
 }
 
-func (*Ufs) Read(req *go9p.SrvReq) {
+func (*WwwFs) Read(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	tc := req.Tc
 	rc := req.Rc
@@ -414,23 +432,6 @@ func (*Ufs) Read(req *go9p.SrvReq) {
 			count = len(fid.dirents[tc.Offset:])
 		}
 
-		if !*Akaros {
-			nextend := sort.SearchInts(fid.direntends, int(tc.Offset)+count)
-			if nextend < len(fid.direntends) {
-				if fid.direntends[nextend] > int(tc.Offset)+count {
-					if nextend > 0 {
-						count = fid.direntends[nextend-1] - int(tc.Offset)
-					} else {
-						count = 0
-					}
-				}
-			}
-			if count == 0 && int(tc.Offset) < len(fid.dirents) && len(fid.dirents) > 0 {
-				req.RespondError(&go9p.Error{"too small read size for dir entry", go9p.EINVAL})
-				return
-			}
-		}
-
 		copy(rc.Data, fid.dirents[tc.Offset:int(tc.Offset)+count])
 
 	} else {
@@ -446,7 +447,7 @@ func (*Ufs) Read(req *go9p.SrvReq) {
 	req.Respond()
 }
 
-func (*Ufs) Write(req *go9p.SrvReq) {
+func (*WwwFs) Write(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	tc := req.Tc
 	err := fid.stat()
@@ -464,9 +465,9 @@ func (*Ufs) Write(req *go9p.SrvReq) {
 	req.RespondRwrite(uint32(n))
 }
 
-func (*Ufs) Clunk(req *go9p.SrvReq) { req.RespondRclunk() }
+func (*WwwFs) Clunk(req *go9p.SrvReq) { req.RespondRclunk() }
 
-func (*Ufs) Remove(req *go9p.SrvReq) {
+func (*WwwFs) Remove(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	err := fid.stat()
 	if err != nil {
@@ -483,7 +484,7 @@ func (*Ufs) Remove(req *go9p.SrvReq) {
 	req.RespondRremove()
 }
 
-func (*Ufs) Stat(req *go9p.SrvReq) {
+func (*WwwFs) Stat(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	err := fid.stat()
 	if err != nil {
@@ -519,7 +520,7 @@ func lookup(uid string, group bool) (uint32, *go9p.Error) {
 	return uint32(u), nil
 }
 
-func (u *Ufs) Wstat(req *go9p.SrvReq) {
+func (u *WwwFs) Wstat(req *go9p.SrvReq) {
 	fid := req.Fid.Aux.(*ufsFid)
 	err := fid.stat()
 	if err != nil {
@@ -633,8 +634,3 @@ func (u *Ufs) Wstat(req *go9p.SrvReq) {
 
 	req.RespondRwstat()
 }
-
-/* enables "Akaros" capabilities, which right now means
- * a sane error message format.
- */
-var Akaros = flag.Bool("akaros", false, "Akaros extensions")

@@ -7,7 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/rminnich/go9p"
+	"github.com/mbucc/wwwfs"
 	"log"
 )
 
@@ -17,14 +17,13 @@ var root = flag.String("root", "/", "root filesystem")
 
 func main() {
 	flag.Parse()
-	ufs := new(go9p.Ufs)
-	ufs.Dotu = true
-	ufs.Id = "ufs"
+	ufs := new(wwwfs.WwwFs)
+	ufs.Id = "wwwfs"
 	ufs.Root = *root
 	ufs.Debuglevel = *debug
 	ufs.Start(ufs)
 
-	fmt.Print("ufs starting\n")
+	fmt.Print("wwwfs starting\n")
 	// determined by build tags
 	//extraFuncs()
 	err := ufs.StartNetListener("tcp", *addr)
