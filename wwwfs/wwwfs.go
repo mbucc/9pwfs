@@ -21,6 +21,7 @@ func main() {
 	ufs.Id = "wwwfs"
 	ufs.Root = *root
 	ufs.Debuglevel = *debug
+	ufs.Upool = WwwUsers{*root}
 	ufs.Start(ufs)
 
 	fmt.Print("wwwfs starting\n")

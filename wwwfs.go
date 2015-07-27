@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// Exists in every directory, defines which virtual user and group own each file.
+// Exists in every directory and defines file ownership.
 const ownershipFile = ".ownership"
 
 type ufsFid struct {
@@ -64,7 +64,14 @@ func isChar(d os.FileInfo) bool {
 	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFCHR
 }
 
-func (fid *ufsFid) setOwnership() *go9p.Error {
+func (fid *ufsFid) canOpen(user go9p.User, root string) *go9p.Error {
+
+fmt.Printf("canOpen: user = %+v and path = '%s'\n", user, fid.path)
+	// Always allow opening the root directory.
+	if filepath.Clean(fid.path) == root {
+		return nil
+	}
+
 	fn := filepath.Join(filepath.Dir(fid.path), ownershipFile)
 	_, err := os.OpenFile(filepath.Join(fn), os.O_RDONLY, 0)
 
@@ -288,11 +295,10 @@ func (wfs *WwwFs) Open(req *go9p.SrvReq) {
 	}
 
 	// If not Root directory, see if virtual user had permssion to open file.
-	if filepath.Clean(fid.path) != wfs.Root {
-		if err9 := fid.setOwnership(); err9 != nil {
-			req.RespondError(err9)
-			return
-		}
+	user := req.Fid.User
+	if err9 := fid.canOpen(user, wfs.Root); err9 != nil {
+		req.RespondError(err9)
+		return
 	}
 
 	var e error
