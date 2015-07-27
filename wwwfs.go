@@ -289,8 +289,6 @@ func (wfs *WwwFs) Open(req *go9p.SrvReq) {
 
 	// If not Root directory, make sure virtual user had permssion to open file.
 	if filepath.Clean(fid.path) != wfs.Root {
-fmt.Printf("fp1 = '%s'\n", filepath.Clean(fid.path))
-fmt.Printf("fp2 = '%s'\n", wfs.Root)
 		if err9 := fid.setOwnership(); err9 != nil {
 			req.RespondError(err9)
 			return
