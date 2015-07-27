@@ -287,7 +287,7 @@ func (wfs *WwwFs) Open(req *go9p.SrvReq) {
 		return
 	}
 
-	// If not Root directory, make sure virtual user had permssion to open file.
+	// If not Root directory, see if virtual user had permssion to open file.
 	if filepath.Clean(fid.path) != wfs.Root {
 		if err9 := fid.setOwnership(); err9 != nil {
 			req.RespondError(err9)
@@ -529,14 +529,6 @@ func (u *WwwFs) Wstat(req *go9p.SrvReq) {
 	dir := &req.Tc.Dir
 	if dir.Mode != 0xFFFFFFFF {
 		mode := dir.Mode & 0777
-		if req.Conn.Dotu {
-			if dir.Mode&go9p.DMSETUID > 0 {
-				mode |= syscall.S_ISUID
-			}
-			if dir.Mode&go9p.DMSETGID > 0 {
-				mode |= syscall.S_ISGID
-			}
-		}
 		e := os.Chmod(fid.path, os.FileMode(mode))
 		if e != nil {
 			req.RespondError(toError(e))
@@ -545,13 +537,9 @@ func (u *WwwFs) Wstat(req *go9p.SrvReq) {
 	}
 
 	uid, gid := go9p.NOUID, go9p.NOUID
-	if req.Conn.Dotu {
-		uid = dir.Uidnum
-		gid = dir.Gidnum
-	}
 
 	// Try to find local uid, gid by name.
-	if (dir.Uid != "" || dir.Gid != "") && !req.Conn.Dotu {
+	if (dir.Uid != "" || dir.Gid != "")  {
 		uid, err = lookup(dir.Uid, false)
 		if err != nil {
 			req.RespondError(err)
