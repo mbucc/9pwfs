@@ -1,5 +1,7 @@
 A 9p service that authorizes file access based on non-OS (AKA "virtual") users.
 
+Built by modifying ufs.go in https://github.com/rminnich/go9p.
+
 STATUS: work-in-progress
 
 To install:
