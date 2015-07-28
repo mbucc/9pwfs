@@ -1,0 +1,9 @@
+# Lines starting with pound sign should be ignored.
+# Fields are colon-separated list of id, name, groups,
+# where groups is a list of comma-separated names.
+# Like in plan9, a user is a group that has one member.
+1:adm:sys
+2:none:
+3:noworld:
+4:sys:
+5:glenda:
