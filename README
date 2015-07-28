@@ -6,9 +6,9 @@ STATUS: work-in-progress
 
 To install:
   export GOPATH=~mbucc/go
-  go get -a github.com/mbucc/wwwfs
-  go get -a github.com/mbucc/wwwfs/wwwfs
-  go install -a github.com/mbucc/wwwfs/wwwfs
+  go get -a github.com/mbucc/vufs
+  go get -a github.com/mbucc/vufs/vufs
+  go install -a github.com/mbucc/vufs/vufs
 
-~/go/bin/wwwfs
+~/go/bin/vufs
 
