@@ -13,7 +13,7 @@ func TestUserFileLoaded(t *testing.T) {
 
 	Convey("Given a valid users file", t, func() {
 
-		users := NewVusers("./test")
+		users, _ := NewVusers("./test")
 
 		Convey("It should be parsed properly", func() {
 

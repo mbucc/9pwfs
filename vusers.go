@@ -1,22 +1,28 @@
-// Copyright 2009 The Go9p Authors.  All rights reserved.
+// Copyright 2009 The Go9p Authors.
+// Copyright 2015 Mark Bucciarelli <mkbucc@gmail.com>
+// All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package vufs
 
 import (
+	"bytes"
+	"fmt"
 	"github.com/rminnich/go9p"
+	"io/ioutil"
+	"path/filepath"
+	"strconv"
 	"sync"
 )
 
 const (
-	userfn = "adm/users" 
+	usersfn = "adm/users"
 )
 
-var 	badchar = []rune{'?', '=', '+', '–', '/', ':' }
+var badchar = []rune{'?', '=', '+', '–', '/', ':'}
 
-
-// In plan9, users and groups are the same.  A user is a group with one member.
+// A user is a group with one member.
 // ref: https://swtch.com/plan9port/man/man8/fossilcons.html
 type vUser struct {
 	// An integer used to represent this user in the on-disk structures
@@ -34,8 +40,9 @@ type vUser struct {
 
 // Simple go9p.Users implementation of virtual users.
 type vUsers struct {
-	root  string
-	users map[string]*vUser
+	root       string
+	nameToUser map[string]*vUser
+	idToUser   map[int]*vUser
 	sync.Mutex
 }
 
@@ -87,13 +94,19 @@ type Users interface {
 */
 
 func (up *vUsers) Uid2User(uid int) go9p.User {
-	panic("Uid2User should not be called, not using dotu")
+	up.Lock()
+	defer up.Unlock()
+	user, present := up.idToUser[uid]
+	if present {
+		return user
+	}
+	return nil
 }
 
 func (up *vUsers) Uname2User(uname string) go9p.User {
 	up.Lock()
 	defer up.Unlock()
-	user, present := up.users[uname]
+	user, present := up.nameToUser[uname]
 	if present {
 		return user
 	}
@@ -101,19 +114,98 @@ func (up *vUsers) Uname2User(uname string) go9p.User {
 }
 
 func (up *vUsers) Gid2Group(gid int) go9p.Group {
-	panic("Gid2Group should not be called, not using dotu")
-}
-
-func (up *vUsers) Gname2Group(gname string) go9p.Group {
 	up.Lock()
 	defer up.Unlock()
-	group, present := up.users[gname]
+	group, present := up.idToUser[gid]
 	if present {
 		return group
 	}
 	return nil
 }
 
-func NewVusers(root string) *vUsers {
-	return &vUsers{root: root, users: make(map[string]*vUser)}
+func (up *vUsers) Gname2Group(gname string) go9p.Group {
+	up.Lock()
+	defer up.Unlock()
+	group, present := up.nameToUser[gname]
+	if present {
+		return group
+	}
+	return nil
+}
+
+func NewVusers(root string) (*vUsers, error) {
+
+	fullpath := filepath.Join(root, usersfn)
+	data, err := ioutil.ReadFile(fullpath)
+	if err != nil {
+		return nil, err
+	}
+
+	nameToUser := make(map[string]*vUser)
+
+	lines := bytes.Split(data, []byte("\n"))
+	for idx, line := range lines {
+
+		if len(line) == 0 {
+			continue
+		}
+
+		if line[0] == byte('#') {
+			continue
+		}
+
+		columns := bytes.Split(line, []byte(":"))
+		if len(columns) != 3 {
+			return nil, fmt.Errorf("Got %d columns (expected %d) on line %d of %s",
+				len(columns), 3, idx, fullpath, string(line))
+		}
+
+		id, err := strconv.Atoi(string(columns[0]))
+		if err != nil {
+			return nil, fmt.Errorf("Can't parse first column as integer on line %d of %s",
+				len(columns), 3, idx, fullpath, string(line))
+		}
+		name := string(columns[1])
+		nameToUser[name] = &vUser{
+			id:      id,
+			name:    name,
+			members: make([]go9p.User, 0),
+			groups:  make([]go9p.Group, 0)}
+	}
+
+	// Load groups on second pass.
+	lines = bytes.Split(data, []byte("\n"))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		if line[0] == byte('#') {
+			continue
+		}
+		columns := bytes.Split(line, []byte(":"))
+		name := string(columns[1])
+		groups := columns[2]
+		user, present := nameToUser[name]
+		if !present {
+			panic(fmt.Sprintf("can't find user '%s' after first pass", name))
+		}
+		groupNames := bytes.Split(groups, []byte(","))
+		for _, groupName := range groupNames {
+			if len(groupName) == 0 {
+				continue
+			}
+			group, present := nameToUser[string(groupName)]
+			if !present {
+				panic(fmt.Sprintf("can't find group name '%s' after first pass", groupName))
+			}
+			user.groups = append(user.groups, group)
+		}
+	}
+
+	idToUser := make(map[int]*vUser)
+
+	return &vUsers{
+		root:       root,
+		nameToUser: nameToUser,
+		idToUser:   idToUser}, nil
 }

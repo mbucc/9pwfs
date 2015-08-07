@@ -16,12 +16,18 @@ var debug = flag.Int("debug", 0, "print debug messages")
 var root = flag.String("root", "/", "root filesystem")
 
 func main() {
+	var err error
 	flag.Parse()
 	fs := new(vufs.VuFs)
 	fs.Id = "vufs"
 	fs.Root = *root
 	fs.Debuglevel = *debug
-	fs.Upool = vufs.VuUsers
+	fs.Upool, err  = vufs.NewVusers(root)
+	if err != nil {
+		log.Println(err)
+		os.exit(1)
+	}
+
 	fs.Start(fs)
 
 	fmt.Print("vufs starting\n")
@@ -30,5 +36,6 @@ func main() {
 	err := fs.StartNetListener("tcp", *addr)
 	if err != nil {
 		log.Println(err)
+		os.exit(1)
 	}
 }
