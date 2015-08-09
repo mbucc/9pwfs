@@ -22,6 +22,16 @@ func TestUserFileLoaded(t *testing.T) {
 			So(users.Uid2User(5), ShouldNotBeNil)
 			So(users.Uid2User(5).Name(), ShouldEqual, "glenda")
 
+			user := users.Uname2User("mark")
+			So(user, ShouldNotBeNil)
+			So(len(user.Groups()), ShouldEqual, 2)
+			So(user.Groups()[0].Name(), ShouldEqual, "adm")
+			So(user.Groups()[1].Name(), ShouldEqual, "sys")
+
+			group := users.Gname2Group("sys")
+			So(group, ShouldNotBeNil)
+			So(len(group.Members()), ShouldEqual, 3)
+
 
 		})
 	})
