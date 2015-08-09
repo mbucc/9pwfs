@@ -114,23 +114,11 @@ func (up *vUsers) Uname2User(uname string) go9p.User {
 }
 
 func (up *vUsers) Gid2Group(gid int) go9p.Group {
-	up.Lock()
-	defer up.Unlock()
-	group, present := up.idToUser[gid]
-	if present {
-		return group
-	}
-	return nil
+	return up.Uid2User(gid).(go9p.Group)
 }
 
 func (up *vUsers) Gname2Group(gname string) go9p.Group {
-	up.Lock()
-	defer up.Unlock()
-	group, present := up.nameToUser[gname]
-	if present {
-		return group
-	}
-	return nil
+	return up.Uname2User(gname).(go9p.Group)
 }
 
 func NewVusers(root string) (*vUsers, error) {
@@ -202,6 +190,7 @@ func NewVusers(root string) (*vUsers, error) {
 		}
 	}
 
+	// Create second map, of ID to user.
 	idToUser := make(map[int]*vUser, len(nameToUser))
 	for _, user := range nameToUser {
 		idToUser[user.Id()] = user
