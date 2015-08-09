@@ -36,7 +36,6 @@ func TestUserFileLoaded(t *testing.T) {
 			So(group.Members()[0].Name(), ShouldEqual, "adm")
 			So(group.Members()[1].Name(), ShouldEqual, "mark")
 
-
 		})
 	})
 

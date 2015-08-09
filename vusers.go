@@ -121,7 +121,6 @@ func (up *vUsers) Gname2Group(gname string) go9p.Group {
 	return up.Uname2User(gname).(go9p.Group)
 }
 
-
 func NewVusers(root string) (*vUsers, error) {
 
 	fullpath := filepath.Join(root, usersfn)
