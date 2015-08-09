@@ -10,5 +10,5 @@ To install:
   go get -a github.com/mbucc/vufs/vufs
   go install -a github.com/mbucc/vufs/vufs
 
-~/go/bin/vufs
+~/go/bin/vufs -root $(pwd) -debug 1
 
