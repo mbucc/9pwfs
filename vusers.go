@@ -121,6 +121,7 @@ func (up *vUsers) Gname2Group(gname string) go9p.Group {
 	return up.Uname2User(gname).(go9p.Group)
 }
 
+
 func NewVusers(root string) (*vUsers, error) {
 
 	fullpath := filepath.Join(root, usersfn)
@@ -187,6 +188,7 @@ func NewVusers(root string) (*vUsers, error) {
 				panic(fmt.Sprintf("can't find group name '%s' after first pass", groupName))
 			}
 			user.groups = append(user.groups, group)
+			group.members = append(group.members, user)
 		}
 	}
 

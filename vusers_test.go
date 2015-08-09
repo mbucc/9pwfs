@@ -30,7 +30,11 @@ func TestUserFileLoaded(t *testing.T) {
 
 			group := users.Gname2Group("sys")
 			So(group, ShouldNotBeNil)
-			So(len(group.Members()), ShouldEqual, 3)
+
+			// A user is always in it's own group.
+			So(len(group.Members()), ShouldEqual, 2)
+			So(group.Members()[0].Name(), ShouldEqual, "adm")
+			So(group.Members()[1].Name(), ShouldEqual, "mark")
 
 
 		})
