@@ -202,7 +202,10 @@ func NewVusers(root string) (*vUsers, error) {
 		}
 	}
 
-	idToUser := make(map[int]*vUser)
+	idToUser := make(map[int]*vUser, len(nameToUser))
+	for _, user := range nameToUser {
+		idToUser[user.Id()] = user
+	}
 
 	return &vUsers{
 		root:       root,

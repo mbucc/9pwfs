@@ -18,6 +18,11 @@ func TestUserFileLoaded(t *testing.T) {
 		Convey("It should be parsed properly", func() {
 
 			So(users.Uname2User("adm"), ShouldNotBeNil)
+
+			So(users.Uid2User(5), ShouldNotBeNil)
+			So(users.Uid2User(5).Name(), ShouldEqual, "glenda")
+
+
 		})
 	})
 
