@@ -31,8 +31,6 @@ func main() {
 	fs.Start(fs)
 
 	fmt.Print("vufs starting\n")
-	// determined by build tags
-	//extraFuncs()
 	err := fs.StartNetListener("tcp", *addr)
 	if err != nil {
 		log.Println(err)
