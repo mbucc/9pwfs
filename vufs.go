@@ -74,6 +74,9 @@ fmt.Printf("canOpen: user = %+v and path = '%s'\n", user, fid.path)
 
 	fn := filepath.Join(filepath.Dir(fid.path), ownershipFile)
 	_, err := os.OpenFile(filepath.Join(fn), os.O_RDONLY, 0)
+fmt.Printf("canOpen: fn = %s\n", fn)
+fmt.Printf("canOpen: err = %v\n", err)
+
 
 	// Can't find ownership file, so deny access (the default).
 	if os.IsNotExist(err) {

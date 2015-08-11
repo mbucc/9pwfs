@@ -26,7 +26,7 @@ func main() {
 	fs.Upool, err  = vufs.NewVusers(*root)
 	if err != nil {
 		log.Println(err)
-		os.exit(1)
+		os.Exit(1)
 	}
 
 	fs.Start(fs)
@@ -35,6 +35,6 @@ func main() {
 	err = fs.StartNetListener("tcp", *addr)
 	if err != nil {
 		log.Println(err)
-		os.exit(1)
+		os.Exit(1)
 	}
 }

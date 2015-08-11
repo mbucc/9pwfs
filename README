@@ -10,5 +10,9 @@ To install:
   go get -a github.com/mbucc/vufs/vufs
   go install -a github.com/mbucc/vufs/vufs
 
-~/go/bin/vufs -root $(pwd) -debug 1
+To run:
+  ~/go/bin/vufs -root $(pwd) -debug 1
+
+Then, in another terminal:
+  9p -n -a localhost:5640 ls
 
