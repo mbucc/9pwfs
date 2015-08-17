@@ -141,8 +141,8 @@ type ufsDir struct {
 }
 
 // t.txt-mark-nuts --> t.xt, mark, nuts
-// t.txt-mark           --> t.xt, mark, mark
-// t.txt                      --> t.txt, adm, adm
+// t.txt-mark      --> t.xt, mark, mark
+// t.txt           --> t.txt, adm, adm
 func path2UidGuidName(path string) (name, uid, gid string) {
 
 	// Defaults.
@@ -215,7 +215,6 @@ func (*VuFs) FidDestroy(sfid *go9p.SrvFid) {
 }
 
 func (ufs *VuFs) Attach(req *go9p.SrvReq) {
-fmt.Println("MKB: vufs.Attach")
 	if req.Afid != nil {
 		req.RespondError(go9p.Enoauth)
 		return
@@ -371,8 +370,6 @@ func (*VuFs) Create(req *go9p.SrvReq) {
 }
 
 func (*VuFs) Read(req *go9p.SrvReq) {
-fmt.Printf("MKB: Read(%+v)\n", req)
-fmt.Printf("MKB: Read: req.Fid.user = %+v\n", req.Fid.User)
 
 	fid := req.Fid.Aux.(*vufsFid)
 	tc := req.Tc
@@ -382,7 +379,6 @@ fmt.Printf("MKB: Read: req.Fid.user = %+v\n", req.Fid.User)
 		req.RespondError(err)
 		return
 	}
-fmt.Printf("MKB: Read: fid.path = %s\n", fid.path)
 
 	go9p.InitRread(rc, tc.Count)
 	var count int
