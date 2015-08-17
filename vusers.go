@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	badchar   = []rune{'?', '=', '+', '–', '/', ':'}
+	badUsernameChar   = []rune{'?', '=', '+', '–', '/', ':' }
 	initialUsers = []byte("1:adm:\n2:mark:\n")
 )
 
@@ -78,7 +78,6 @@ func (u *vUser) Groups() []go9p.Group { return u.groups }
 func (u *vUser) Members() []go9p.User { return u.members }
 
 func (u *vUser) IsMember(g go9p.Group) bool {
-fmt.Printf("IsMember(%+v)\n", g)
 	for _, b := range u.groups {
 		if b.Id() == g.Id() {
 			return true
@@ -99,12 +98,10 @@ type Users interface {
 */
 
 func (up *vUsers) Uid2User(uid int) go9p.User {
-fmt.Printf("Uid2User(%d)\n", uid)
 	up.Lock()
 	defer up.Unlock()
 	user, present := up.idToUser[uid]
 	if present {
-fmt.Printf("   return %+V\n", user)
 
 		return user
 	}
@@ -112,8 +109,6 @@ fmt.Printf("   return %+V\n", user)
 }
 
 func (up *vUsers) Uname2User(uname string) go9p.User {
-fmt.Printf("Uname2User(%s)\n", uname)
-fmt.Printf("Uname2User(%+v)\n", up.nameToUser)
 
 	up.Lock()
 	defer up.Unlock()

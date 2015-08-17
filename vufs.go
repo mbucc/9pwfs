@@ -13,15 +13,14 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-// Exists in every directory and defines file ownership.
-const ownershipFile = ".ownership"
+// Don't allow this char in file names.
+const delim = "-"
 
 type vufsFid struct {
 	path       string
@@ -65,27 +64,6 @@ func isChar(d os.FileInfo) bool {
 	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFCHR
 }
 
-func (fid *vufsFid) canOpen(user go9p.User, root string) *go9p.Error {
-
-fmt.Printf("canOpen: user = %+v and path = '%s'\n", user, fid.path)
-	// Always allow opening the root directory.
-	if filepath.Clean(fid.path) == root {
-		return nil
-	}
-
-	fn := filepath.Join(filepath.Dir(fid.path), ownershipFile)
-	_, err := os.OpenFile(filepath.Join(fn), os.O_RDONLY, 0)
-fmt.Printf("canOpen: fn = %s\n", fn)
-fmt.Printf("canOpen: err = %v\n", err)
-
-
-	// Can't find ownership file, so deny access (the default).
-	if os.IsNotExist(err) {
-		return &go9p.Error{"permission denied", 17}
-	}
-
-	return nil
-}
 
 func (fid *vufsFid) stat() *go9p.Error {
 	var err error
@@ -162,16 +140,43 @@ type ufsDir struct {
 	go9p.Dir
 }
 
+// t.txt-mark-nuts --> t.xt, mark, nuts
+// t.txt-mark           --> t.xt, mark, mark
+// t.txt                      --> t.txt, adm, adm
+func path2UidGuidName(path string) (name, uid, gid string) {
+
+	// Defaults.
+	uid = "adm"
+	gid = "adm"
+
+	// If no delimiters, give ownership to adm.
+	n1 := strings.LastIndex(path, delim)
+	if n1 == -1 {
+		name = path
+		return
+	}
+
+	// If one delimiter, then it's the uid.  Set gid = uid and exit.
+	n2 := strings.LastIndex(path[:n1], delim)
+	if n2 == -1 {
+		name = path[:n1]
+		uid = path[n1 + 1:]
+		gid = uid
+		return
+	}
+
+	name = path[:n2]
+	gid = path[n1 + 1:]
+	uid = path[n2 + 1: n1]
+	return name, uid, gid
+
+}
+
 func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	if r := recover(); r != nil {
 		fmt.Print("stat failed: ", r)
 		return nil, &os.PathError{"dir2Dir", path, nil}
 	}
-	sysif := d.Sys()
-	if sysif == nil {
-		return nil, &os.PathError{"dir2Dir: sysif is nil", path, nil}
-	}
-	sysMode := sysif.(*syscall.Stat_t)
 
 	dir := new(ufsDir)
 	dir.Qid = *dir2Qid(d)
@@ -179,23 +184,7 @@ func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	dir.Atime = uint32(0 /*atime(sysMode).Unix()*/)
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
-	dir.Name = path[strings.LastIndex(path, "/")+1:]
-
-	unixUid := int(sysMode.Uid)
-	unixGid := int(sysMode.Gid)
-	dir.Uid = strconv.Itoa(unixUid)
-	dir.Gid = strconv.Itoa(unixGid)
-
-	// BUG(akumar): LookupId will never find names for
-	// groups, as it only operates on user ids.
-	u, err := user.LookupId(dir.Uid)
-	if err == nil {
-		dir.Uid = u.Username
-	}
-	g, err := user.LookupId(dir.Gid)
-	if err == nil {
-		dir.Gid = g.Username
-	}
+	dir.Name, dir.Uid, dir.Gid = path2UidGuidName(path[strings.LastIndex(path, "/")+1:])
 
 	return &dir.Dir, nil
 }
@@ -299,13 +288,6 @@ func (wfs *VuFs) Open(req *go9p.SrvReq) {
 		return
 	}
 
-	// If not Root directory, see if virtual user had permssion to open file.
-	user := req.Fid.User
-	if err9 := fid.canOpen(user, wfs.Root); err9 != nil {
-		req.RespondError(err9)
-		return
-	}
-
 	var e error
 	fid.file, e = os.OpenFile(fid.path, omode2uflags(tc.Mode), 0)
 	if e != nil {
@@ -389,6 +371,9 @@ func (*VuFs) Create(req *go9p.SrvReq) {
 }
 
 func (*VuFs) Read(req *go9p.SrvReq) {
+fmt.Printf("MKB: Read(%+v)\n", req)
+fmt.Printf("MKB: Read: req.Fid.user = %+v\n", req.Fid.User)
+
 	fid := req.Fid.Aux.(*vufsFid)
 	tc := req.Tc
 	rc := req.Rc
@@ -397,6 +382,7 @@ func (*VuFs) Read(req *go9p.SrvReq) {
 		req.RespondError(err)
 		return
 	}
+fmt.Printf("MKB: Read: fid.path = %s\n", fid.path)
 
 	go9p.InitRread(rc, tc.Count)
 	var count int
