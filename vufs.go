@@ -6,7 +6,8 @@ package vufs
 
 import (
 	"fmt"
-	"github.com/rminnich/go9p"
+	//"github.com/rminnich/go9p"
+	"github.com/mbucc/go9p"
 	"io"
 	"log"
 	"os"
@@ -225,6 +226,7 @@ func (*VuFs) FidDestroy(sfid *go9p.SrvFid) {
 }
 
 func (ufs *VuFs) Attach(req *go9p.SrvReq) {
+fmt.Println("MKB: vufs.Attach")
 	if req.Afid != nil {
 		req.RespondError(go9p.Enoauth)
 		return

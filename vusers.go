@@ -1,5 +1,4 @@
 // Copyright 2009 The Go9p Authors.
-// Copyright 2015 Mark Bucciarelli <mkbucc@gmail.com>
 // All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -9,8 +8,10 @@ package vufs
 import (
 	"bytes"
 	"fmt"
-	"github.com/rminnich/go9p"
+	//"github.com/rminnich/go9p"
+	"github.com/mbucc/go9p"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -20,7 +21,10 @@ const (
 	usersfn = "adm/users"
 )
 
-var badchar = []rune{'?', '=', '+', '–', '/', ':'}
+var (
+	badchar   = []rune{'?', '=', '+', '–', '/', ':'}
+	initialUsers = []byte("1:adm:\n2:mark:\n")
+)
 
 // A user is a group with one member.
 // ref: https://swtch.com/plan9port/man/man8/fossilcons.html
@@ -74,6 +78,7 @@ func (u *vUser) Groups() []go9p.Group { return u.groups }
 func (u *vUser) Members() []go9p.User { return u.members }
 
 func (u *vUser) IsMember(g go9p.Group) bool {
+fmt.Printf("IsMember(%+v)\n", g)
 	for _, b := range u.groups {
 		if b.Id() == g.Id() {
 			return true
@@ -94,16 +99,22 @@ type Users interface {
 */
 
 func (up *vUsers) Uid2User(uid int) go9p.User {
+fmt.Printf("Uid2User(%d)\n", uid)
 	up.Lock()
 	defer up.Unlock()
 	user, present := up.idToUser[uid]
 	if present {
+fmt.Printf("   return %+V\n", user)
+
 		return user
 	}
 	return nil
 }
 
 func (up *vUsers) Uname2User(uname string) go9p.User {
+fmt.Printf("Uname2User(%s)\n", uname)
+fmt.Printf("Uname2User(%+v)\n", up.nameToUser)
+
 	up.Lock()
 	defer up.Unlock()
 	user, present := up.nameToUser[uname]
@@ -121,10 +132,44 @@ func (up *vUsers) Gname2Group(gname string) go9p.Group {
 	return up.Uname2User(gname).(go9p.Group)
 }
 
+// Open userfile.  Create if not found.
+func readUserFile(userfile string) ([]byte, error) {
+
+	os.MkdirAll(filepath.Dir(userfile), 0700)
+	fp, err := os.OpenFile(userfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+
+	if err == nil {
+
+		// File doesn't exist, write default user info.
+
+		defer fp.Close()
+		fp.Write(initialUsers)
+		return initialUsers, nil
+
+	} else {
+
+		if os.IsExist(err) {
+
+			// File exists, read contents.
+
+			return ioutil.ReadFile(userfile)
+
+		} else {
+
+			// We got an error trying to create the file.
+
+			return nil, err
+
+		}
+	}
+
+}
+
 func NewVusers(root string) (*vUsers, error) {
 
-	fullpath := filepath.Join(root, usersfn)
-	data, err := ioutil.ReadFile(fullpath)
+	userfn := filepath.Join(root, usersfn)
+
+	data, err := readUserFile(userfn)
 	if err != nil {
 		return nil, err
 	}
@@ -145,13 +190,13 @@ func NewVusers(root string) (*vUsers, error) {
 		columns := bytes.Split(line, []byte(":"))
 		if len(columns) != 3 {
 			return nil, fmt.Errorf("Got %d columns (expected %d) on line %d of %s",
-				len(columns), 3, idx, fullpath, string(line))
+				len(columns), 3, idx, userfn, string(line))
 		}
 
 		id, err := strconv.Atoi(string(columns[0]))
 		if err != nil {
 			return nil, fmt.Errorf("Can't parse first column as integer on line %d of %s",
-				len(columns), 3, idx, fullpath, string(line))
+				len(columns), 3, idx, userfn, string(line))
 		}
 		name := string(columns[1])
 		nameToUser[name] = &vUser{
