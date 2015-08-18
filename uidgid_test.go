@@ -4,15 +4,19 @@
 
 package vufs
 
+
 import (
 	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
 	"testing"
+	"os"
 )
 
 func TestNoUidGid(t *testing.T) {
 
 	Convey("Given a file name with no uid, gid.", t, func() {
+
+		os.Remove(uidgidFile)
 
 		path := "t.txt"
 
@@ -31,6 +35,8 @@ func TestNoUidGid(t *testing.T) {
 func TestUidGid(t *testing.T) {
 
 	Convey("Given a file name with just a  uid", t, func() {
+
+		os.Remove(uidgidFile)
 
 		path := "t.txt"
 		ioutil.WriteFile(uidgidFile, []byte("t.txt:mark:mark"), 0644)
