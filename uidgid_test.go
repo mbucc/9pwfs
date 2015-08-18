@@ -14,39 +14,35 @@ import (
 
 func TestNoUidGid(t *testing.T) {
 
-	Convey("Given a file name with no uid, gid.", t, func() {
-
-		os.Remove(uidgidFile)
+	Convey("Given a file name", t, func() {
 
 		path := "t.txt"
 
-		Convey("It should be owned by adm user", func() {
+		Convey("No uidgid file means it is owned by adm", func() {
+
+			os.Remove(uidgidFile)
 
 			uid, gid, _ := path2UidGid(path)
 
 			So(uid, ShouldEqual, "adm")
 			So(gid, ShouldEqual, "adm")
 		})
-	})
 
-}
+		Convey("We use the uidgid entry if first column matches filename", func() {
 
-
-func TestUidGid(t *testing.T) {
-
-	Convey("Given a file name with just a  uid", t, func() {
-
-		os.Remove(uidgidFile)
-
-		path := "t.txt"
-		ioutil.WriteFile(uidgidFile, []byte("t.txt:mark:mark"), 0644)
-
-		Convey("The group should be same as uid", func() {
+			ioutil.WriteFile(uidgidFile, []byte(path + ":mark:nuts"), 0644)
 
 			uid, gid, _ := path2UidGid(path)
 
 			So(uid, ShouldEqual, "mark")
-			So(gid, ShouldEqual, "mark")
+			So(gid, ShouldEqual, "nuts")
 		})
+
+		Reset(func() {
+			os.Remove(uidgidFile)
+		})
+
 	})
+
+
 }
