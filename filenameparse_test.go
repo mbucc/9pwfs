@@ -6,6 +6,7 @@ package vufs
 
 import (
 	. "github.com/smartystreets/goconvey/convey"
+	"io/ioutil"
 	"testing"
 )
 
@@ -17,9 +18,8 @@ func TestNoUidGid(t *testing.T) {
 
 		Convey("It should be owned by adm user", func() {
 
-			name, uid, gid := path2UidGuidName(path)
+			uid, gid, _ := path2UidGid(path)
 
-			So(name, ShouldEqual, "t.txt")
 			So(uid, ShouldEqual, "adm")
 			So(gid, ShouldEqual, "adm")
 		})
@@ -28,36 +28,19 @@ func TestNoUidGid(t *testing.T) {
 }
 
 
-func TestJustUid(t *testing.T) {
+func TestUidGid(t *testing.T) {
 
 	Convey("Given a file name with just a  uid", t, func() {
 
-		path := "t.txt" + delim + "mark"
+		path := "t.txt"
+		ioutil.WriteFile(uidgidFile, []byte("t.txt:mark:mark"), 0644)
 
 		Convey("The group should be same as uid", func() {
 
-			name, uid, gid := path2UidGuidName(path)
+			uid, gid, _ := path2UidGid(path)
 
-			So(name, ShouldEqual, "t.txt")
 			So(uid, ShouldEqual, "mark")
 			So(gid, ShouldEqual, "mark")
-		})
-	})
-}
-
-func TestBothUidGid(t *testing.T) {
-
-	Convey("Given a file name with both a uid and gid", t, func() {
-
-		path := "t.txt" + delim + "mark" + delim + "nuts"
-
-		Convey("The uid and gid should be parsed correctly", func() {
-
-			name, uid, gid := path2UidGuidName(path)
-
-			So(name, ShouldEqual, "t.txt")
-			So(uid, ShouldEqual, "mark")
-			So(gid, ShouldEqual, "nuts")
 		})
 	})
 }

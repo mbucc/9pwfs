@@ -9,6 +9,7 @@ import (
 	//"github.com/rminnich/go9p"
 	"github.com/mbucc/go9p"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/user"
@@ -19,8 +20,7 @@ import (
 	"time"
 )
 
-// Don't allow this char in file names.
-const delim = "-"
+const uidgidFile = ".uidgid"
 
 type vufsFid struct {
 	path       string
@@ -143,33 +143,45 @@ type ufsDir struct {
 // t.txt-mark-nuts --> t.xt, mark, nuts
 // t.txt-mark      --> t.xt, mark, mark
 // t.txt           --> t.txt, adm, adm
-func path2UidGuidName(path string) (name, uid, gid string) {
+func path2UidGid(path string) (uid, gid string, err error) {
 
-	// Defaults.
+	// Default owner/group is adm.
 	uid = "adm"
 	gid = "adm"
 
-	// If no delimiters, give ownership to adm.
-	n1 := strings.LastIndex(path, delim)
-	if n1 == -1 {
-		name = path
-		return
+
+	d := "."
+	name := path
+	n := strings.LastIndex(path, "/")
+	if n != -1 {
+		d = path[:n]
+		name = path[n+1:]
 	}
 
-	// If one delimiter, then it's the uid.  Set gid = uid and exit.
-	n2 := strings.LastIndex(path[:n1], delim)
-	if n2 == -1 {
-		name = path[:n1]
-		uid = path[n1 + 1:]
-		gid = uid
-		return
+
+	data, err := ioutil.ReadFile(d + "/" + uidgidFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return uid, gid, nil
+		} else {
+			return "", "", err
+		}
 	}
 
-	name = path[:n2]
-	gid = path[n1 + 1:]
-	uid = path[n2 + 1: n1]
-	return name, uid, gid
+	sdata := string(data)
+	for _, line := range(strings.Split(sdata, "\n")) {
+		columns := strings.Split(line, ":")
+		if len(columns) != 3 {
+			continue
+		}
+		if columns[0] == name {
+			uid = columns[1]
+			gid = columns[2]
+			break
+		}
+	}
 
+	return uid, gid, nil
 }
 
 func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
@@ -184,7 +196,12 @@ func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	dir.Atime = uint32(0 /*atime(sysMode).Unix()*/)
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
-	dir.Name, dir.Uid, dir.Gid = path2UidGuidName(path[strings.LastIndex(path, "/")+1:])
+	dir.Name = path[strings.LastIndex(path, "/")+1:]
+	uid, gid, err := path2UidGid(path)
+	if err != nil {
+		return nil, err
+	}
+	dir.Uid, dir.Gid = uid, gid
 
 	return &dir.Dir, nil
 }
