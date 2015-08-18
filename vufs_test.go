@@ -19,19 +19,19 @@ const (
 	messageSizeInBytes = 8192
 )
 
-func initfs(rootdir, userdata string) {
-	os.Mkdir(rootdir, 0755)
+func initfs(rootdir string, mode os.FileMode, userdata string) {
+	os.Mkdir(rootdir, mode)
 	os.Mkdir(rootdir+"/adm", 0700)
 	ioutil.WriteFile(rootdir+"/adm/users", []byte(userdata), 0600)
 	ioutil.WriteFile(rootdir+"/adm/"+uidgidFile, []byte("1:users:adm:adm\n"), 0600)
 }
 
 func server(rootdir, port string) {
+
 	var err error
 	fs := new(VuFs)
 	fs.Id = "vufs"
 	fs.Root = rootdir
-	//fs.Debuglevel = 1
 	fs.Upool, err = NewVusers(rootdir)
 	if err != nil {
 		panic(err)
@@ -83,36 +83,51 @@ func listDir(path string, user go9p.User) ([]*go9p.Dir, error) {
 
 }
 
-func TestServerGid(t *testing.T) {
+func TestServer(t *testing.T) {
 
-	var err error
+	rootdir := "./tmpfs"
+
+	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n")
+
+	server(rootdir, port)
+
+	mark := &vUser{
+		id:      2,
+		name:    "mark",
+		members: []go9p.User{},
+		groups:  []go9p.Group{}}
+
+	hugo := &vUser{
+		id:      3,
+		name:    "hugo",
+		members: []go9p.User{},
+		groups:  []go9p.Group{}}
+
 
 	Convey("Given a vufs rooted in a 755 directory and a client", t, func() {
-
-		rootdir := "./tmpfs"
-
-		initfs(rootdir, "1:adm:adm\n2:mark:mark\n")
-
-		server(rootdir, port)
-		So(err, ShouldBeNil)
-
-		Convey("A valid user can list files", func() {
-
-			validUser := &vUser{
-				id:      2,
-				name:    "mark",
-				members: []go9p.User{},
-				groups:  []go9p.Group{}}
-
-			dirs, err := listDir(".", validUser)
+	
+		Convey("A valid user can list root directory", func() {
+			dirs, err := listDir(".", mark)
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
-			So(dirs[0].Name, ShouldEqual, "adm")
+
 		})
 
-		Reset(func() {
-			os.RemoveAll(rootdir)
+		Convey("An invalid user cannot list root directory", func() {
+			_, err := listDir(".", hugo)
+			So(err, ShouldNotBeNil)
 		})
 
+		Convey("A valid user cannot list files when root dir has mode 0700", func() {
+			err := os.Chmod(rootdir, 0700)
+			So(err, ShouldBeNil)
+			_, err = listDir(".", mark)
+			So(err, ShouldNotBeNil)
+			os.Chmod(rootdir, 0755)
+
+		})
 	})
+
+	os.RemoveAll(rootdir)
+
 }
