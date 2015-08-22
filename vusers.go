@@ -116,6 +116,7 @@ func readUserFile(userfile string) ([]byte, error) {
 	fp, err := os.OpenFile(userfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 
 	if err == nil {
+
 		// File doesn't exist, write default user info.
 
 		defer fp.Close()
