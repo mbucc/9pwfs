@@ -4,45 +4,56 @@
 
 package vufs
 
-
 import (
 	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
-	"testing"
 	"os"
+	"path/filepath"
+	"testing"
 )
 
 func TestNoUidGid(t *testing.T) {
 
-	Convey("Given a file name", t, func() {
+	Convey("Given a user pool and a file", t, func() {
 
 		path := "t.txt"
 
-		Convey("No uidgid file means it is owned by adm", func() {
+		root, err := ioutil.TempDir("", "vufs")
+		So(err, ShouldBeNil)
+
+		fn := filepath.Join(root, usersfn)
+		os.MkdirAll(filepath.Dir(fn), 0700)
+		err = ioutil.WriteFile(fn, []byte("1:adm:\n2:mark:\n3:nuts:\n"), 0644)
+		So(err, ShouldBeNil)
+
+		users, err := NewVusers(root)
+		So(err, ShouldBeNil)
+
+		Convey("If no uidgid file found, then file owned by adm", func() {
 
 			os.Remove(uidgidFile)
 
-			uid, gid, _ := path2UidGid(path)
+			user, group, err := path2UidGid(path, users)
+			So(err, ShouldBeNil)
 
-			So(uid, ShouldEqual, "adm")
-			So(gid, ShouldEqual, "adm")
+			So(user, ShouldEqual, "adm")
+			So(group, ShouldEqual, "adm")
 		})
 
-		Convey("We use the uidgid entry if first column matches filename", func() {
+		Convey("If uidgid file has entry for the file, we use that user and group", func() {
 
-			ioutil.WriteFile(uidgidFile, []byte(path + ":mark:nuts"), 0644)
+			ioutil.WriteFile(uidgidFile, []byte(path+":2:3"), 0644)
 
-			uid, gid, _ := path2UidGid(path)
+			user, group, err := path2UidGid(path, users)
+			So(err, ShouldBeNil)
 
-			So(uid, ShouldEqual, "mark")
-			So(gid, ShouldEqual, "nuts")
+			So(user, ShouldEqual, "mark")
+			So(group, ShouldEqual, "nuts")
 		})
 
 		Reset(func() {
-			os.Remove(uidgidFile)
+			defer os.RemoveAll(root)
 		})
-
 	})
-
 
 }

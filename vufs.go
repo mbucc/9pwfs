@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -63,7 +64,6 @@ func isChar(d os.FileInfo) bool {
 	stat := d.Sys().(*syscall.Stat_t)
 	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFCHR
 }
-
 
 func (fid *vufsFid) stat() *go9p.Error {
 	var err error
@@ -140,48 +140,55 @@ type ufsDir struct {
 	go9p.Dir
 }
 
-// t.txt-mark-nuts --> t.xt, mark, nuts
-// t.txt-mark      --> t.xt, mark, mark
-// t.txt           --> t.txt, adm, adm
-func path2UidGid(path string) (uid, gid string, err error) {
+// Lookup (uid, gid) in uidgidFile.  If not found return (adm, adm).
+func path2UidGid(path string, upool go9p.Users) (string, string, error) {
 
 	// Default owner/group is adm.
-	uid = "adm"
-	gid = "adm"
+	user := "adm"
+	group := "adm"
 
-
-	d := "."
-	name := path
-	n := strings.LastIndex(path, "/")
-	if n != -1 {
-		d = path[:n]
-		name = path[n+1:]
-	}
-
-
-	data, err := ioutil.ReadFile(d + "/" + uidgidFile)
+	fn := filepath.Join(filepath.Dir(path), uidgidFile)
+	data, err := ioutil.ReadFile(fn)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return uid, gid, nil
+			return user, group, nil
 		} else {
 			return "", "", err
 		}
 	}
 
 	sdata := string(data)
-	for _, line := range(strings.Split(sdata, "\n")) {
+	for lineno, line := range strings.Split(sdata, "\n") {
 		columns := strings.Split(line, ":")
 		if len(columns) != 3 {
 			continue
 		}
-		if columns[0] == name {
-			uid = columns[1]
-			gid = columns[2]
+		if columns[0] == path {
+			uid, err := strconv.Atoi(columns[1])
+			if err != nil {
+				return "", "", fmt.Errorf("Atoi(uid) failed on line %d of %s: %v", lineno+1, fn, err)
+			}
+			u := upool.Uid2User(uid)
+			if u == nil {
+				return "", "", fmt.Errorf("No user found for uid %d of %s, found, on line %d of %s)", uid, path, lineno+1, fn)
+			}
+			user = u.Name()
+
+			gid, err := strconv.Atoi(columns[2])
+			if err != nil {
+				return "", "", fmt.Errorf("Atoi(gid) failed on line %d of %s: %v", lineno+1, fn, err)
+			}
+			u = upool.Uid2User(gid)
+			if u == nil {
+				return "", "", fmt.Errorf("No group found for gid %d of %s, found on line %d of %s)", gid, path, lineno+1, fn)
+			}
+			group = u.Name()
+
 			break
 		}
 	}
 
-	return uid, gid, nil
+	return user, group, nil
 }
 
 func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
@@ -197,7 +204,7 @@ func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
 	dir.Name = path[strings.LastIndex(path, "/")+1:]
-	uid, gid, err := path2UidGid(path)
+	uid, gid, err := path2UidGid(path, upool)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +249,7 @@ func (ufs *VuFs) Attach(req *go9p.SrvReq) {
 	// You can think of the ufs.Root as a 'chroot' of a sort.
 	// clients attach are not allowed to go outside the
 	// directory represented by ufs.Root
+	// BUG(mbucc): Attach doesn't check for .. in aname.
 	fid.path = path.Join(ufs.Root, tc.Aname)
 
 	req.Fid.Aux = fid
@@ -386,6 +394,33 @@ func (*VuFs) Create(req *go9p.SrvReq) {
 	req.RespondRcreate(dir2Qid(fid.st), 0)
 }
 
+func canRead(user go9p.User, fid *vufsFid) bool {
+
+	// Yuck
+	g := &vUser{name: fid.group}
+
+	if fid.st.IsDir() {
+		if (user.Name() == fid.user && fid.st.Mode()|0100 > 0) ||
+			((user.Name() == fid.group || user.IsMember(g)) &&
+				fid.st.Mode()|0010 > 0) ||
+			(fid.st.Mode()|0001 > 0) {
+			return true
+		}
+	}
+
+	/*
+		} else {
+			if user.Name() == fid.user && fid.st|0400 ||
+				(user.IsMember(g) && fid.st|0040) ||
+				fid.Aux.st|0004 {
+				return true
+			}
+		}
+	*/
+	return false
+
+}
+
 func (*VuFs) Read(req *go9p.SrvReq) {
 
 	fid := req.Fid.Aux.(*vufsFid)
@@ -396,8 +431,14 @@ func (*VuFs) Read(req *go9p.SrvReq) {
 		req.RespondError(err)
 		return
 	}
-
 	go9p.InitRread(rc, tc.Count)
+
+	//if !canRead(req.Fid.User, fid, req.Conn.Srv.Upool) {
+	if !canRead(req.Fid.User, fid) {
+		req.RespondError(go9p.Eperm)
+		return
+	}
+
 	var count int
 	var e error
 	if fid.st.IsDir() {
@@ -549,7 +590,7 @@ func (u *VuFs) Wstat(req *go9p.SrvReq) {
 	uid, gid := go9p.NOUID, go9p.NOUID
 
 	// Try to find local uid, gid by name.
-	if (dir.Uid != "" || dir.Gid != "")  {
+	if dir.Uid != "" || dir.Gid != "" {
 		uid, err = lookup(dir.Uid, false)
 		if err != nil {
 			req.RespondError(err)

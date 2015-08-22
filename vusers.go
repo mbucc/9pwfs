@@ -22,8 +22,8 @@ const (
 )
 
 var (
-	badUsernameChar   = []rune{'?', '=', '+', '–', '/', ':' }
-	initialUsers = []byte("1:adm:\n2:mark:\n")
+	badUsernameChar = []rune{'?', '=', '+', '–', '/', ':'}
+	initialUsers    = []byte("1:adm:\n2:mark:\n")
 )
 
 // A user is a group with one member.
@@ -51,22 +51,10 @@ type vUsers struct {
 }
 
 /*
-../../rminnich/go9p/p9.go:192,198
-// Represents a user
-type User interface {
-	Name() string          // user name
-	Id() int               // user id
-	Groups() []Group       // groups the user belongs to (can return nil)
-	IsMember(g Group) bool // returns true if the user is member of the specified group
-}
-
-../../rminnich/go9p/p9.go:200,205
-// Represents a group of users
-type Group interface {
-	Name() string    // group name
-	Id() int         // group id
-	Members() []User // list of members that belong to the group (can return nil)
-}
+go9p interfaces:
+	User		../../rminnich/go9p/p9.go:192,198
+	Group	../../rminnich/go9p/p9.go:200,205
+	Users	../../rminnich/go9p/p9.go:184,190
 */
 
 func (u *vUser) Name() string { return u.name }
@@ -78,6 +66,12 @@ func (u *vUser) Groups() []go9p.Group { return u.groups }
 func (u *vUser) Members() []go9p.User { return u.members }
 
 func (u *vUser) IsMember(g go9p.Group) bool {
+	// The Id is the immutable fact for the user.
+	// It is what is stored as uid,gid on files.
+	// It happens to be int in the go9p implementation
+	// (as opposed to string in Plan9), but this has the
+	// advantage of using compiler to ensure that we can't
+	// check an Id() against a Name().
 	for _, b := range u.groups {
 		if b.Id() == g.Id() {
 			return true
@@ -86,23 +80,11 @@ func (u *vUser) IsMember(g go9p.Group) bool {
 	return false
 }
 
-/*
-../../rminnich/go9p/p9.go:184,190
-// Interface for accessing users and groups
-type Users interface {
-	Uid2User(uid int) User
-	Uname2User(uname string) User
-	Gid2Group(gid int) Group
-	Gname2Group(gname string) Group
-}
-*/
-
 func (up *vUsers) Uid2User(uid int) go9p.User {
 	up.Lock()
 	defer up.Unlock()
 	user, present := up.idToUser[uid]
 	if present {
-
 		return user
 	}
 	return nil
@@ -134,7 +116,6 @@ func readUserFile(userfile string) ([]byte, error) {
 	fp, err := os.OpenFile(userfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 
 	if err == nil {
-
 		// File doesn't exist, write default user info.
 
 		defer fp.Close()
