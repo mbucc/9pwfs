@@ -104,24 +104,26 @@ func TestServer(t *testing.T) {
 		groups:  []go9p.Group{}}
 
 
-	Convey("Given a vufs rooted in a 755 directory and a client", t, func() {
+	Convey("Given a vufs rooted in a directory and a client", t, func() {
+		var d []*go9p.Dir
 	
-		Convey("A valid user can list root directory", func() {
+		SkipConvey("A valid user can list a 0755 root directory", func() {
 			dirs, err := listDir(".", mark)
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 
 		})
 
-		Convey("An invalid user cannot list root directory", func() {
+		SkipConvey("An invalid user cannot list root directory", func() {
 			_, err := listDir(".", hugo)
 			So(err, ShouldNotBeNil)
 		})
 
-		Convey("A valid user cannot list files when root dir has mode 0700", func() {
+		Convey("With 0700 root dir, a non-adm valid user cannot list files", func() {
 			err := os.Chmod(rootdir, 0700)
 			So(err, ShouldBeNil)
-			_, err = listDir(".", mark)
+			d, err = listDir(".", mark)
+fmt.Println("d =", d)
 			So(err, ShouldNotBeNil)
 			os.Chmod(rootdir, 0755)
 

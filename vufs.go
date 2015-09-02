@@ -140,8 +140,8 @@ type ufsDir struct {
 	go9p.Dir
 }
 
-// Lookup (uid, gid) in uidgidFile.  If not found return (adm, adm).
-func path2UidGid(path string, upool go9p.Users) (string, string, error) {
+// Lookup (uid, gid) in uidgidFile and return (user,group).  If not found return (adm, adm).
+func path2UserGroup(path string, upool go9p.Users) (string, string, error) {
 
 	// Default owner/group is adm.
 	user := "adm"
@@ -166,21 +166,23 @@ func path2UidGid(path string, upool go9p.Users) (string, string, error) {
 		if columns[0] == path {
 			uid, err := strconv.Atoi(columns[1])
 			if err != nil {
-				return "", "", fmt.Errorf("Atoi(uid) failed on line %d of %s: %v", lineno+1, fn, err)
+				return "", "", fmt.Errorf("Atoi(uid) failed %s:%d -- %v", fn, lineno+1, err)
 			}
 			u := upool.Uid2User(uid)
 			if u == nil {
-				return "", "", fmt.Errorf("No user found for uid %d of %s, found, on line %d of %s)", uid, path, lineno+1, fn)
+				return "", "",
+					fmt.Errorf("No user found for uid %d of %s, %s:%d", uid, path, fn, lineno+1)
 			}
 			user = u.Name()
 
 			gid, err := strconv.Atoi(columns[2])
 			if err != nil {
-				return "", "", fmt.Errorf("Atoi(gid) failed on line %d of %s: %v", lineno+1, fn, err)
+				return "", "", fmt.Errorf("Atoi(gid) failed  %s:%d -- %v", fn, lineno+1, err)
 			}
 			u = upool.Uid2User(gid)
 			if u == nil {
-				return "", "", fmt.Errorf("No group found for gid %d of %s, found on line %d of %s)", gid, path, lineno+1, fn)
+				return "", "",
+					fmt.Errorf("No user found for gid %d of %s, %s:%d", gid, path, fn, lineno+1)
 			}
 			group = u.Name()
 
@@ -200,11 +202,12 @@ func dir2Dir(path string, d os.FileInfo, upool go9p.Users) (*go9p.Dir, error) {
 	dir := new(ufsDir)
 	dir.Qid = *dir2Qid(d)
 	dir.Mode = dir2Npmode(d)
+	// BUG(mbucc) dir.Atime hard coded to zero.
 	dir.Atime = uint32(0 /*atime(sysMode).Unix()*/)
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
 	dir.Name = path[strings.LastIndex(path, "/")+1:]
-	uid, gid, err := path2UidGid(path, upool)
+	uid, gid, err := path2UserGroup(path, upool)
 	if err != nil {
 		return nil, err
 	}
@@ -394,21 +397,29 @@ func (*VuFs) Create(req *go9p.SrvReq) {
 	req.RespondRcreate(dir2Qid(fid.st), 0)
 }
 
-func canRead(user go9p.User, fid *vufsFid) bool {
+func readProhibited(user go9p.User, fid *go9p.Dir) bool {
+
+	if user.Name() == fid.uid && 
+
+/*
 
 	// Yuck
 	g := &vUser{name: fid.group}
 
 	if fid.st.IsDir() {
-		if (user.Name() == fid.user && fid.st.Mode()|0100 > 0) ||
-			((user.Name() == fid.group || user.IsMember(g)) &&
-				fid.st.Mode()|0010 > 0) ||
-			(fid.st.Mode()|0001 > 0) {
+		if user.Id() == fid.uid && fid.st.Mode()|0100 > 0 {
+			   ||
+			   			((user.Name() == fid.group || user.IsMember(g)) &&
+			   				fid.st.Mode()|0010 > 0) ||
+			   			(fid.st.Mode()|0001 > 0) {
 			return true
+		} else {
+			return false
 		}
+	} else {
+		return false
 	}
 
-	/*
 		} else {
 			if user.Name() == fid.user && fid.st|0400 ||
 				(user.IsMember(g) && fid.st|0040) ||
@@ -416,8 +427,8 @@ func canRead(user go9p.User, fid *vufsFid) bool {
 				return true
 			}
 		}
-	*/
 	return false
+	*/
 
 }
 
@@ -433,8 +444,7 @@ func (*VuFs) Read(req *go9p.SrvReq) {
 	}
 	go9p.InitRread(rc, tc.Count)
 
-	//if !canRead(req.Fid.User, fid, req.Conn.Srv.Upool) {
-	if !canRead(req.Fid.User, fid) {
+	if readProhibited(req.Fid.User, req.Fid) {
 		req.RespondError(go9p.Eperm)
 		return
 	}

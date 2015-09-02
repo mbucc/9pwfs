@@ -33,7 +33,7 @@ func TestNoUidGid(t *testing.T) {
 
 			os.Remove(uidgidFile)
 
-			user, group, err := path2UidGid(path, users)
+			user, group, err := path2UserGroup(path, users)
 			So(err, ShouldBeNil)
 
 			So(user, ShouldEqual, "adm")
@@ -44,7 +44,7 @@ func TestNoUidGid(t *testing.T) {
 
 			ioutil.WriteFile(uidgidFile, []byte(path+":2:3"), 0644)
 
-			user, group, err := path2UidGid(path, users)
+			user, group, err := path2UserGroup(path, users)
 			So(err, ShouldBeNil)
 
 			So(user, ShouldEqual, "mark")
