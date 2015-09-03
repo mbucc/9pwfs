@@ -6,12 +6,14 @@ package vufs
 
 import (
 	"fmt"
-	"github.com/mbucc/go9p"
 	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
 	"net"
 	"os"
 	"testing"
+
+	"github.com/lionkov/go9p/p"
+	"github.com/lionkov/go9p/p/clnt"
 )
 
 const (
@@ -59,16 +61,16 @@ func server(rootdir, port string) {
 	}
 }
 
-func listDir(path string, user go9p.User) ([]*go9p.Dir, error) {
+func listDir(path string, user p.User) ([]*p.Dir, error) {
 
-	client, err := go9p.Mount("tcp", port,  ".", messageSizeInBytes, user)
+	client, err := clnt.Mount("tcp", port,  ".", messageSizeInBytes, user)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Unmount()
 
 	// file modes: ../go9p/p9.go:67,76
-	file, err := client.FOpen(".", go9p.OREAD)
+	file, err := client.FOpen(".", p.OREAD)
 	if err != nil {
 		return nil, err
 	}
@@ -94,18 +96,18 @@ func TestServer(t *testing.T) {
 	mark := &vUser{
 		id:      2,
 		name:    "mark",
-		members: []go9p.User{},
-		groups:  []go9p.Group{}}
+		members: []p.User{},
+		groups:  []p.Group{}}
 
 	hugo := &vUser{
 		id:      3,
 		name:    "hugo",
-		members: []go9p.User{},
-		groups:  []go9p.Group{}}
+		members: []p.User{},
+		groups:  []p.Group{}}
 
 
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
-		var d []*go9p.Dir
+		var d []*p.Dir
 	
 		SkipConvey("A valid user can list a 0755 root directory", func() {
 			dirs, err := listDir(".", mark)

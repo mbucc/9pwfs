@@ -20,6 +20,8 @@ import (
 	"github.com/lionkov/go9p/p/srv"
 )
 
+const uidgidFile = ".uidgid"
+
 type Fid struct {
 	path       string
 	file       *os.File
@@ -161,7 +163,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 	user := "adm"
 	group := "adm"
 
-	fn := filepath.Join(filepath.Dir(path), ".uidgid")
+	fn := filepath.Join(filepath.Dir(path), uidgidFile)
 	data, err := ioutil.ReadFile(fn)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -8,13 +8,13 @@ package vufs
 import (
 	"bytes"
 	"fmt"
-	//"github.com/rminnich/go9p"
-	"github.com/mbucc/go9p"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
+
+	"github.com/lionkov/go9p/p"
 )
 
 const (
@@ -37,12 +37,12 @@ type vUser struct {
 	// (Renaming is not currently supported.)
 	name string
 	// A comma-separated list of members in this group
-	members []go9p.User
+	members []p.User
 	// A comma-separated list of groups this user is part of.
-	groups []go9p.Group
+	groups []p.Group
 }
 
-// Simple go9p.Users implementation of virtual users.
+// Simple p.Users implementation of virtual users.
 type vUsers struct {
 	root       string
 	nameToUser map[string]*vUser
@@ -61,11 +61,11 @@ func (u *vUser) Name() string { return u.name }
 
 func (u *vUser) Id() int { return u.id }
 
-func (u *vUser) Groups() []go9p.Group { return u.groups }
+func (u *vUser) Groups() []p.Group { return u.groups }
 
-func (u *vUser) Members() []go9p.User { return u.members }
+func (u *vUser) Members() []p.User { return u.members }
 
-func (u *vUser) IsMember(g go9p.Group) bool {
+func (u *vUser) IsMember(g p.Group) bool {
 	// The Id is the immutable fact for the user.
 	// It is what is stored as uid,gid on files.
 	// It happens to be int in the go9p implementation
@@ -80,7 +80,7 @@ func (u *vUser) IsMember(g go9p.Group) bool {
 	return false
 }
 
-func (up *vUsers) Uid2User(uid int) go9p.User {
+func (up *vUsers) Uid2User(uid int) p.User {
 	up.Lock()
 	defer up.Unlock()
 	user, present := up.idToUser[uid]
@@ -90,7 +90,7 @@ func (up *vUsers) Uid2User(uid int) go9p.User {
 	return nil
 }
 
-func (up *vUsers) Uname2User(uname string) go9p.User {
+func (up *vUsers) Uname2User(uname string) p.User {
 
 	up.Lock()
 	defer up.Unlock()
@@ -101,12 +101,12 @@ func (up *vUsers) Uname2User(uname string) go9p.User {
 	return nil
 }
 
-func (up *vUsers) Gid2Group(gid int) go9p.Group {
-	return up.Uid2User(gid).(go9p.Group)
+func (up *vUsers) Gid2Group(gid int) p.Group {
+	return up.Uid2User(gid).(p.Group)
 }
 
-func (up *vUsers) Gname2Group(gname string) go9p.Group {
-	return up.Uname2User(gname).(go9p.Group)
+func (up *vUsers) Gname2Group(gname string) p.Group {
+	return up.Uname2User(gname).(p.Group)
 }
 
 // Open userfile.  Create if not found.
@@ -179,8 +179,8 @@ func NewVusers(root string) (*vUsers, error) {
 		nameToUser[name] = &vUser{
 			id:      id,
 			name:    name,
-			members: make([]go9p.User, 0),
-			groups:  make([]go9p.Group, 0)}
+			members: make([]p.User, 0),
+			groups:  make([]p.Group, 0)}
 	}
 
 	// Load groups on second pass.
