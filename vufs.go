@@ -1,7 +1,6 @@
 package vufs
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,7 +36,6 @@ type VuFs struct {
 	Root string
 }
 
-var root = flag.String("root", "/", "root filesystem")
 var Enoent = &p.Error{"file not found", p.ENOENT}
 
 func toError(err error) *p.Error {
@@ -509,7 +507,6 @@ func (u *VuFs) Read(req *srv.Req) {
 			return
 		}
 	}
-
 	p.SetRreadCount(rc, uint32(count))
 	req.Respond()
 }
@@ -682,8 +679,8 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
-/*
-func New() *VuFs {
-	return &VuFs{Root: *root}
+
+func New(root string) *VuFs {
+	return &VuFs{Root: root}
 }
-*/
+

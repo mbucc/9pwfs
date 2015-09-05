@@ -8,6 +8,7 @@ import (
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"testing"
@@ -28,18 +29,19 @@ func initfs(rootdir string, mode os.FileMode, userdata string) {
 	ioutil.WriteFile(rootdir+"/adm/"+uidgidFile, []byte("1:users:adm:adm\n"), 0600)
 }
 
-func server(rootdir, port string) {
+func runserver(rootdir, port string) {
 
 	var err error
-	fs := new(VuFs)
+	fs := New(rootdir)
 	fs.Id = "vufs"
-	fs.Root = rootdir
 	fs.Upool, err = NewVusers(rootdir)
 	if err != nil {
 		panic(err)
 	}
+	//fs.Debuglevel = 5
 
 	fs.Start(fs)
+
 	go func() {
 		err = fs.StartNetListener("tcp", port)
 		if err != nil {
@@ -47,7 +49,7 @@ func server(rootdir, port string) {
 		}
 	}()
 
-	// Make sure server is listening before returning.
+	// Make sure runserver is listening before returning.
 	var conn net.Conn
 	for i := 0; i < 16; i++ {
 		if conn, err = net.Dial("tcp", port); err == nil {
@@ -57,27 +59,27 @@ func server(rootdir, port string) {
 		}
 	}
 	if err != nil {
-		panic("couldn't connect to server after 15 tries")
+		panic("couldn't connect to runserver after 15 tries")
 	}
 }
 
 func listDir(path string, user p.User) ([]*p.Dir, error) {
 
-	client, err := clnt.Mount("tcp", port,  ".", messageSizeInBytes, user)
+	client, err := clnt.Mount("tcp", port,  "/", messageSizeInBytes, user)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Unmount()
 
-	// file modes: ../go9p/p9.go:67,76
-	file, err := client.FOpen(".", p.OREAD)
-	if err != nil {
+	// file modes: ../../lionkov/go9p/p/p9.go:65,74
+	file, err := client.FOpen("/", p.OREAD)
+	if err != nil && err != io.EOF  {
 		return nil, err
 	}
 
-	// returns an array of Dir instances: ../go9p/p9.go:127,147
+	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
 	d, err := file.Readdir(0)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
@@ -91,7 +93,7 @@ func TestServer(t *testing.T) {
 
 	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n")
 
-	server(rootdir, port)
+	runserver(rootdir, port)
 
 	mark := &vUser{
 		id:      2,
@@ -109,26 +111,24 @@ func TestServer(t *testing.T) {
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
 		var d []*p.Dir
 	
-		SkipConvey("A valid user can list a 0755 root directory", func() {
-			dirs, err := listDir(".", mark)
+		Convey("A valid user can list the one file in a 0755 root directory", func() {
+			os.Chmod(rootdir, 0755)
+			dirs, err := listDir("/", mark)
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
-
 		})
 
-		SkipConvey("An invalid user cannot list root directory", func() {
+		Convey("An invalid user cannot list root directory", func() {
+			os.Chmod(rootdir, 0777)
 			_, err := listDir(".", hugo)
 			So(err, ShouldNotBeNil)
 		})
 
-		Convey("With 0700 root dir, a non-adm valid user cannot list files", func() {
+		Convey("A valid user without permissions cannot list files", func() {
 			err := os.Chmod(rootdir, 0700)
 			So(err, ShouldBeNil)
 			d, err = listDir(".", mark)
-fmt.Println("d =", d)
 			So(err, ShouldNotBeNil)
-			os.Chmod(rootdir, 0755)
-
 		})
 	})
 
