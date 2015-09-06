@@ -78,8 +78,8 @@ func listDir(path string, user p.User) ([]*p.Dir, error) {
 	}
 
 	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
-	d, err := file.Readdir(0)
-	if err != nil && err != io.EOF {
+	d, err := file.Readdir(-1)
+	if err != nil  {
 		return nil, err
 	}
 

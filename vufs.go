@@ -6,10 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/user"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,22 +20,14 @@ import (
 const uidgidFile = ".uidgid"
 
 type Fid struct {
-	path       string
-	file       *os.File
-	dirs       []os.FileInfo
-	diroffset  uint64
-	direntends []int
-	dirents    []byte
-	st         os.FileInfo
+	path string
+	file *os.File
 }
 
 type VuFs struct {
 	srv.Srv
 	Root string
 }
-
-var Enoent = &p.Error{"file not found", p.ENOENT}
-var Eperm = &p.Error{"permission denied", p.EPERM}
 
 func toError(err error) *p.Error {
 	var ecode uint32
@@ -50,37 +40,6 @@ func toError(err error) *p.Error {
 	}
 
 	return &p.Error{ename, ecode}
-}
-
-// IsBlock reports if the file is a block device
-func isBlock(d os.FileInfo) bool {
-	sysif := d.Sys()
-	if sysif == nil {
-		return false
-	}
-	stat := sysif.(*syscall.Stat_t)
-	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFBLK
-}
-
-// IsChar reports if the file is a character device
-func isChar(d os.FileInfo) bool {
-	sysif := d.Sys()
-	if sysif == nil {
-		return false
-	}
-	stat := sysif.(*syscall.Stat_t)
-	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFCHR
-}
-
-func (fid *Fid) stat() *p.Error {
-	var err error
-
-	fid.st, err = os.Lstat(fid.path)
-	if err != nil {
-		return toError(err)
-	}
-
-	return nil
 }
 
 func omode2uflags(mode uint8) int {
@@ -131,10 +90,6 @@ func dir2QidType(d os.FileInfo) uint8 {
 		ret |= p.QTDIR
 	}
 
-	if d.Mode()&os.ModeSymlink != 0 {
-		ret |= p.QTSYMLINK
-	}
-
 	return ret
 }
 
@@ -149,10 +104,23 @@ func dir2Npmode(d os.FileInfo) uint32 {
 	return ret
 }
 
-// Dir is an instantiation of the p.Dir structure
-// that can act as a receiver for local methods.
-type Dir struct {
-	p.Dir
+// Convert a string user id to a string and look up user Name.
+func atouid(id string, upool p.Users) (string, error) {
+
+	uid, err := strconv.Atoi(id)
+
+	if err != nil {
+		return "", fmt.Errorf("invalid uid %s", id)
+	}
+
+	u := upool.Uid2User(uid)
+
+	if u == nil {
+		return "", fmt.Errorf("No user found for uid %d", uid)
+	}
+
+	return u.Name(), nil
+
 }
 
 // Lookup (uid, gid) in uidgidFile and return (user,group).  If not found return (adm, adm).
@@ -173,33 +141,31 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 	}
 
 	sdata := string(data)
-	for lineno, line := range strings.Split(sdata, "\n") {
+
+	for _, line := range strings.Split(sdata, "\n") {
+
+		if line == "#" {
+			continue
+		}
+
 		columns := strings.Split(line, ":")
 		if len(columns) != 3 {
 			continue
 		}
-		if columns[0] == path {
-			uid, err := strconv.Atoi(columns[1])
-			if err != nil {
-				return "", "", fmt.Errorf("Atoi(uid) failed %s:%d -- %v", fn, lineno+1, err)
-			}
-			u := upool.Uid2User(uid)
-			if u == nil {
-				return "", "",
-					fmt.Errorf("No user found for uid %d of %s, %s:%d", uid, path, fn, lineno+1)
-			}
-			user = u.Name()
 
-			gid, err := strconv.Atoi(columns[2])
+		if columns[0] == path {
+
+			user, err = atouid(columns[1], upool)
+
 			if err != nil {
-				return "", "", fmt.Errorf("Atoi(gid) failed  %s:%d -- %v", fn, lineno+1, err)
+				return "", "", err
 			}
-			u = upool.Uid2User(gid)
-			if u == nil {
-				return "", "",
-					fmt.Errorf("No user found for gid %d of %s, %s:%d", gid, path, fn, lineno+1)
+
+			group, err = atouid(columns[2], upool)
+
+			if err != nil {
+				return "", "", err
 			}
-			group = u.Name()
 
 			break
 		}
@@ -208,8 +174,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 	return user, group, nil
 }
 
-
-func dir2Dir(s string, d os.FileInfo, upool p.Users) (*Dir, error) {
+func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
 	sysif := d.Sys()
 	if sysif == nil {
 		return nil, &os.PathError{"dir2Dir", s, nil}
@@ -222,7 +187,7 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*Dir, error) {
 		return nil, &os.PathError{"dir2Dir: sysif has wrong type", s, nil}
 	}
 
-	dir := new(Dir)
+	dir := new(p.Dir)
 	dir.Qid = *dir2Qid(d)
 	dir.Mode = dir2Npmode(d)
 	dir.Atime = uint32(atime(sysMode).Unix())
@@ -235,15 +200,15 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*Dir, error) {
 		return nil, err
 	}
 	dir.Uid, dir.Gid = uid, gid
- 
 
-	return &dir.Dir, nil
+	return dir, nil
 }
 
 // Checks if the specified user has permission to perform
 // certain operation on a file. Perm contains one or more
 // of DMREAD, DMWRITE, and DMEXEC.
-func (f *Dir) CheckPerm(user p.User, perm uint32) bool {
+func CheckPerm(f *p.Dir, user p.User, perm uint32) bool {
+
 	if user == nil {
 		return false
 	}
@@ -283,8 +248,6 @@ func (f *Dir) CheckPerm(user p.User, perm uint32) bool {
 	return false
 }
 
-
-
 func (*VuFs) ConnOpened(conn *srv.Conn) {
 	if conn.Srv.Debuglevel > 0 {
 		log.Println("connected")
@@ -305,45 +268,48 @@ func (*VuFs) FidDestroy(sfid *srv.Fid) {
 	}
 
 	fid = sfid.Aux.(*Fid)
-	if fid.file != nil {
+	if fid != nil {
 		fid.file.Close()
 	}
 }
 
+// Always attach to the VuFs root.
 func (u *VuFs) Attach(req *srv.Req) {
-	if req.Afid != nil {
-		req.RespondError(srv.Enoauth)
-		return
+
+	if req.Tc.Aname != "/" && req.Tc.Aname != "" {
+		req.RespondError(srv.Eperm)
 	}
 
-	tc := req.Tc
-	fid := new(Fid)
-
-	// You can think of the ufs.Root as a 'chroot' of a sort.
-	// client attaches are not allowed to go outside the
-	// directory represented by ufs.Root
-	fid.path = path.Join(u.Root, tc.Aname)
-
-	req.Fid.Aux = fid
-	err := fid.stat()
+	st, err := os.Stat(u.Root)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
-	qid := dir2Qid(fid.st)
+	fid := new(Fid)
+	fid.path = u.Root
+	req.Fid.Aux = fid
+
+	qid := dir2Qid(st)
 	req.RespondRattach(qid)
 }
 
 func (*VuFs) Flush(req *srv.Req) {}
 
-func (*VuFs) Walk(req *srv.Req) {
+// BUG(mbucc) does not fully implement spec when fid = newfid.
+// From http://plan9.bell-labs.com/magic/man2html/5/walk:
+//	If newfid is the same as fid, the above discussion applies, with the
+//	obvious difference that if the walk changes the state of newfid, it
+//	also changes the state of fid; and if newfid is unaffected, then fid
+//	is also unaffected.
+//
+func (u *VuFs) Walk(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
 
-	err := fid.stat()
+	_, err := os.Stat(fid.path)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -351,16 +317,32 @@ func (*VuFs) Walk(req *srv.Req) {
 		req.Newfid.Aux = new(Fid)
 	}
 
-	nfid := req.Newfid.Aux.(*Fid)
+	newfid := req.Newfid.Aux.(*Fid)
 	wqids := make([]p.Qid, len(tc.Wname))
 	path := fid.path
 	i := 0
 	for ; i < len(tc.Wname); i++ {
-		fullpath := path + "/" + tc.Wname[i]
-		st, err := os.Lstat(fullpath)
+
+		var newpath string
+
+		// Don't allow client to dotdot out of the file system root.
+		if tc.Wname[i] == ".." {
+			if path == u.Root {
+				continue
+			} else {
+				newpath = path[:strings.LastIndex(path, "/")]
+				if newpath == u.Root {
+					continue
+				}
+			}
+		} else {
+			newpath = path + "/" + tc.Wname[i]
+		}
+
+		st, err := os.Stat(newpath)
 		if err != nil {
 			if i == 0 {
-				req.RespondError(Enoent)
+				req.RespondError(srv.Enoent)
 				return
 			}
 
@@ -370,26 +352,30 @@ func (*VuFs) Walk(req *srv.Req) {
 		wqids[i] = *dir2Qid(st)
 
 		if (wqids[i].Type & p.QTDIR) > 0 {
-			f, err := dir2Dir(fullpath, st, req.Conn.Srv.Upool) 
-			if !f.CheckPerm(req.Fid.User, p.DMEXEC) {
-				req.RespondError(Eperm)
+			f, err := dir2Dir(newpath, st, req.Conn.Srv.Upool)
+			if err != nil {
+				req.RespondError(toError(err))
+				return
+			}
+			if !CheckPerm(f, req.Fid.User, p.DMEXEC) {
+				req.RespondError(srv.Eperm)
 				return
 			}
 		}
 
-		path = fullpath
+		path = newpath
 	}
 
-	nfid.path = path
+	newfid.path = path
 	req.RespondRwalk(wqids[0:i])
 }
 
-func (*VuFs) Open(req *srv.Req) {
+func (u *VuFs) Open(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
-	err := fid.stat()
+	st, err := os.Stat(u.Root)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -400,15 +386,15 @@ func (*VuFs) Open(req *srv.Req) {
 		return
 	}
 
-	req.RespondRopen(dir2Qid(fid.st), 0)
+	req.RespondRopen(dir2Qid(st), 0)
 }
 
 func (*VuFs) Create(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
-	err := fid.stat()
+	st, err := os.Stat(fid.path)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -418,37 +404,25 @@ func (*VuFs) Create(req *srv.Req) {
 	switch {
 	case tc.Perm&p.DMDIR != 0:
 		e = os.Mkdir(path, os.FileMode(tc.Perm&0777))
+		if e == nil {
+			file, e = os.OpenFile(path, omode2uflags(tc.Mode), 0)
+		}
 
 	case tc.Perm&p.DMSYMLINK != 0:
-		e = os.Symlink(tc.Ext, path)
-
 	case tc.Perm&p.DMLINK != 0:
-		n, e := strconv.ParseUint(tc.Ext, 10, 0)
-		if e != nil {
-			break
-		}
-
-		ofid := req.Conn.FidGet(uint32(n))
-		if ofid == nil {
-			req.RespondError(srv.Eunknownfid)
-			return
-		}
-
-		e = os.Link(ofid.Aux.(*Fid).path, path)
-		ofid.DecRef()
-
 	case tc.Perm&p.DMNAMEDPIPE != 0:
 	case tc.Perm&p.DMDEVICE != 0:
-		req.RespondError(&p.Error{"not implemented", p.EIO})
+	case tc.Perm&p.DMSOCKET != 0:
+	case tc.Perm&p.DMSETUID != 0:
+	case tc.Perm&p.DMSETGID != 0:
+		req.RespondError(srv.Ebaduse)
 		return
 
 	default:
 		var mode uint32 = tc.Perm & 0777
-		file, e = os.OpenFile(path, omode2uflags(tc.Mode)|os.O_CREATE, os.FileMode(mode))
-	}
-
-	if file == nil && e == nil {
-		file, e = os.OpenFile(path, omode2uflags(tc.Mode), 0)
+		file, e = os.OpenFile(path,
+			omode2uflags(tc.Mode)|os.O_CREATE,
+			os.FileMode(mode))
 	}
 
 	if e != nil {
@@ -458,21 +432,20 @@ func (*VuFs) Create(req *srv.Req) {
 
 	fid.path = path
 	fid.file = file
-	err = fid.stat()
+	st, err = os.Stat(fid.path)
 	if err != nil {
 		req.RespondError(err)
 		return
 	}
 
-	req.RespondRcreate(dir2Qid(fid.st), 0)
+	req.RespondRcreate(dir2Qid(st), 0)
 }
 
 func (u *VuFs) Read(req *srv.Req) {
-	dbg := u.Debuglevel&srv.DbgLogFcalls != 0
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
 	rc := req.Rc
-	err := fid.stat()
+	st, err := os.Stat(fid.path)
 	if err != nil {
 		req.RespondError(err)
 		return
@@ -481,79 +454,44 @@ func (u *VuFs) Read(req *srv.Req) {
 	p.InitRread(rc, tc.Count)
 	var count int
 	var e error
-	if fid.st.IsDir() {
-		if tc.Offset == 0 {
-			var e error
-			// If we got here, it was open. Can't really seek
-			// in most cases, just close and reopen it.
-			fid.file.Close()
-			if fid.file, e = os.OpenFile(fid.path, omode2uflags(req.Fid.Omode), 0); e != nil {
-				req.RespondError(toError(e))
-				return
-			}
-
-			if fid.dirs, e = fid.file.Readdir(-1); e != nil {
-				req.RespondError(toError(e))
-				return
-			}
-
-			if dbg {
-				log.Printf("Read: read %d entries", len(fid.dirs))
-			}
-			fid.dirents = nil
-			fid.direntends = nil
-			for i := 0; i < len(fid.dirs); i++ {
-				path := fid.path + "/" + fid.dirs[i].Name()
-				st, err := dir2Dir(path, fid.dirs[i], req.Conn.Srv.Upool)
-				if err != nil {
-					if dbg {
-						log.Printf("dbg: stat of %v: %v", path, err)
-					}
-					continue
-				}
-				if dbg {
-					log.Printf("Stat: %v is %v", path, st)
-				}
-				b := p.PackDir(st, false)
-				fid.dirents = append(fid.dirents, b...)
-				count += len(b)
-				fid.direntends = append(fid.direntends, count)
-				if dbg {
-					log.Printf("fid.direntends is %v\n", fid.direntends)
-				}
-			}
-		}
-
-		switch {
-		case tc.Offset > uint64(len(fid.dirents)):
-			count = 0
-		case len(fid.dirents[tc.Offset:]) > int(tc.Count):
-			count = int(tc.Count)
-		default:
-			count = len(fid.dirents[tc.Offset:])
-		}
-
-		if dbg {
-			log.Printf("readdir: count %v @ offset %v", count, tc.Offset)
-		}
-		nextend := sort.SearchInts(fid.direntends, int(tc.Offset)+count)
-		if nextend < len(fid.direntends) {
-			if fid.direntends[nextend] > int(tc.Offset)+count {
-				if nextend > 0 {
-					count = fid.direntends[nextend-1] - int(tc.Offset)
-				} else {
-					count = 0
-				}
-			}
-		}
-		if dbg {
-			log.Printf("readdir: count adjusted %v @ offset %v", count, tc.Offset)
-		}
-		if count == 0 && int(tc.Offset) < len(fid.dirents) && len(fid.dirents) > 0 {
-			req.RespondError(&p.Error{"too small read size for dir entry", p.EINVAL})
+	if st.IsDir() {
+		// Simpler to treat non-zero offset as an error for directories.
+		if tc.Offset != 0 {
+			req.RespondError(srv.Ebadoffset)
 			return
 		}
-		copy(rc.Data, fid.dirents[tc.Offset:int(tc.Offset)+count])
+
+		dirs, e := fid.file.Readdir(-1)
+
+		if e != nil {
+			req.RespondError(toError(e))
+			return
+		}
+
+		// Bytes/one packed dir = 49 + len(name) + len(uid) + len(gid) + len(muid)
+		// Estimate 49 + 20 + 20 + 20 + 11
+		// From ../../lionkov/go9p/p/p9.go:421,427
+		dirents := make([]byte, 0, 120 * len(dirs))
+		for i := 0; i < len(dirs); i++ {
+			path := fid.path + "/" + dirs[i].Name()
+			st, err := dir2Dir(path, dirs[i], req.Conn.Srv.Upool)
+			if err != nil {
+				req.RespondError(toError(err))
+				return
+			}
+			b := p.PackDir(st, false)
+			dirents = append(dirents, b...)
+		}
+
+		if len(dirents) > int(tc.Count) {
+			req.RespondError(srv.Etoolarge)
+			return
+		}
+
+		copy(rc.Data, dirents)
+
+		count = len(dirents)
+
 	} else {
 		count, e = fid.file.ReadAt(rc.Data, int64(tc.Offset))
 		if e != nil && e != io.EOF {
@@ -568,9 +506,9 @@ func (u *VuFs) Read(req *srv.Req) {
 func (*VuFs) Write(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
-	err := fid.stat()
+	_, err := os.Stat(fid.path)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -587,9 +525,9 @@ func (*VuFs) Clunk(req *srv.Req) { req.RespondRclunk() }
 
 func (*VuFs) Remove(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
-	err := fid.stat()
+	_, err := os.Stat(fid.path)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -604,43 +542,26 @@ func (*VuFs) Remove(req *srv.Req) {
 
 func (*VuFs) Stat(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
-	if err := fid.stat(); err != nil {
-		req.RespondError(err)
+	st, err := os.Stat(fid.path)
+
+	if err != nil {
+		req.RespondError(toError(err))
 		return
 	}
 
-	st, err := dir2Dir(fid.path, fid.st, req.Conn.Srv.Upool)
+	dir, err := dir2Dir(fid.path, st, req.Conn.Srv.Upool)
 	if err != nil {
 		req.RespondError(err)
 		return
 	}
-	req.RespondRstat(st)
-}
-
-func lookup(uid string, group bool) (uint32, *p.Error) {
-	if uid == "" {
-		return p.NOUID, nil
-	}
-	usr, e := user.Lookup(uid)
-	if e != nil {
-		return p.NOUID, toError(e)
-	}
-	conv := usr.Uid
-	if group {
-		conv = usr.Gid
-	}
-	u, e := strconv.Atoi(conv)
-	if e != nil {
-		return p.NOUID, toError(e)
-	}
-	return uint32(u), nil
+	req.RespondRstat(dir)
 }
 
 func (u *VuFs) Wstat(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
-	err := fid.stat()
+	_, err := os.Stat(fid.path)
 	if err != nil {
-		req.RespondError(err)
+		req.RespondError(toError(err))
 		return
 	}
 
@@ -654,6 +575,8 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		}
 	}
 
+/*
+	// BUG(mbucc) implement chown
 	uid, gid := p.NOUID, p.NOUID
 
 	uid, err = lookup(dir.Uid, false)
@@ -675,7 +598,7 @@ func (u *VuFs) Wstat(req *srv.Req) {
 			return
 		}
 	}
-
+*/
 	if dir.Name != "" {
 		// If we path.Join dir.Name to / before adding it to
 		// the fid path, that ensures nobody gets to walk out of the
@@ -687,7 +610,7 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		// we will make it relative to root. This is a gigantic performance
 		// improvement in systems that allow it.
 		if filepath.IsAbs(dir.Name) {
-			newname = path.Join(u.Root, dir.Name)
+			newname = path.Join(fid.path, dir.Name)
 		}
 
 		err := syscall.Rename(fid.path, newname)
@@ -733,8 +656,6 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
-
 func New(root string) *VuFs {
 	return &VuFs{Root: root}
 }
-
