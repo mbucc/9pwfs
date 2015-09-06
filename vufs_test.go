@@ -85,13 +85,14 @@ func listDir(conn net.Conn, path string, user p.User) ([]*p.Dir, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer client.Unmount()
 
 	// file modes: ../../lionkov/go9p/p/p9.go:65,74
 	file, err := client.FOpen("/", p.OREAD)
 	if err != nil && err != io.EOF  {
 		return nil, err
 	}
+	defer client.Clunk(file.Fid())
+
 
 	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
 	d, err := file.Readdir(-1)
