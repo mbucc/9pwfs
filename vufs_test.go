@@ -91,7 +91,7 @@ func listDir(conn net.Conn, path string, user p.User) ([]*p.Dir, error) {
 	if err != nil && err != io.EOF  {
 		return nil, err
 	}
-	defer client.Clunk(file.Fid())
+	defer file.Close()
 
 
 	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
