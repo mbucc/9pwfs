@@ -22,14 +22,29 @@ const (
 	messageSizeInBytes = 8192
 )
 
+// Initialize file system as:
+//
+//          /
+//           |
+//           +-- adm/            --rwx------ adm adm
+//                   |
+//                   +-- users     --rw------- adm adm
+//
+//         Notes:
+//         
+//          a.    Users shown are virtual ones, not ones on disk.
+//         
+//          b.    If no ownership specified (in .uidgid), it defaults to adm adm.
+//
+// 
 func initfs(rootdir string, mode os.FileMode, userdata string) {
 	os.Mkdir(rootdir, mode)
 	os.Mkdir(rootdir+"/adm", 0700)
 	ioutil.WriteFile(rootdir+"/adm/users", []byte(userdata), 0600)
-	ioutil.WriteFile(rootdir+"/adm/"+uidgidFile, []byte("1:users:adm:adm\n"), 0600)
+	//ioutil.WriteFile(rootdir+"/adm/"+uidgidFile, []byte("1:users:adm:adm\n"), 0600)
 }
 
-func runserver(rootdir, port string) {
+func runserver(rootdir, port string) net.Conn {
 
 	var err error
 	fs := New(rootdir)
@@ -54,18 +69,19 @@ func runserver(rootdir, port string) {
 	for i := 0; i < 16; i++ {
 		if conn, err = net.Dial("tcp", port); err == nil {
 			fmt.Printf("Server is up, got connnection %+v\n", conn)
-			conn.Close()
 			break
 		}
 	}
 	if err != nil {
 		panic("couldn't connect to runserver after 15 tries")
 	}
+
+	return conn
 }
 
-func listDir(path string, user p.User) ([]*p.Dir, error) {
+func listDir(conn net.Conn, path string, user p.User) ([]*p.Dir, error) {
 
-	client, err := clnt.Mount("tcp", port,  "/", messageSizeInBytes, user)
+	client, err := clnt.MountConn(conn,  "/", messageSizeInBytes, user)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +109,14 @@ func TestServer(t *testing.T) {
 
 	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n")
 
-	runserver(rootdir, port)
+	// Kee
+	conn := runserver(rootdir, port)
+
+	adm := &vUser{
+		id:      1,
+		name:    "adm",
+		members: []p.User{},
+		groups:  []p.Group{}}
 
 	mark := &vUser{
 		id:      2,
@@ -110,28 +133,37 @@ func TestServer(t *testing.T) {
 
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
 		var d []*p.Dir
+
+		Convey("/adm/users is 0600 adm, adm", func() {
+			dirs, err := listDir(conn, "/", adm)
+			So(err, ShouldBeNil)
+			So(len(dirs), ShouldEqual, 1)
+		})
 	
 		Convey("A valid user can list the one file in a 0755 root directory", func() {
 			os.Chmod(rootdir, 0755)
-			dirs, err := listDir("/", mark)
+			dirs, err := listDir(conn, "/", mark)
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 		})
 
 		Convey("An invalid user cannot list root directory", func() {
 			os.Chmod(rootdir, 0777)
-			_, err := listDir(".", hugo)
-			So(err, ShouldNotBeNil)
+			_, err := listDir(conn, ".", hugo)
+			So(err.Error(), ShouldEqual, "unknown user: 22: 0")
 		})
 
 		Convey("A valid user without permissions cannot list files", func() {
 			err := os.Chmod(rootdir, 0700)
 			So(err, ShouldBeNil)
-			d, err = listDir(".", mark)
+			d, err = listDir(conn, ".", mark)
 			So(err, ShouldNotBeNil)
 		})
+
+
 	})
 
 	os.RemoveAll(rootdir)
+	conn.Close()
 
 }
