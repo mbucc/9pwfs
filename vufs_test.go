@@ -38,7 +38,7 @@ func runserver(rootdir, port string) {
 	if err != nil {
 		panic(err)
 	}
-	//fs.Debuglevel = 5
+	//fs.Debuglevel = 1
 
 	fs.Start(fs)
 

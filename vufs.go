@@ -218,6 +218,7 @@ func CheckPerm(f *p.Dir, user p.User, perm uint32) bool {
 	/* other permissions */
 	fperm := f.Mode & 7
 	if (fperm & perm) == perm {
+
 		return true
 	}
 
@@ -227,6 +228,7 @@ func CheckPerm(f *p.Dir, user p.User, perm uint32) bool {
 	}
 
 	if (fperm & perm) == perm {
+
 		return true
 	}
 
@@ -242,6 +244,7 @@ func CheckPerm(f *p.Dir, user p.User, perm uint32) bool {
 	}
 
 	if (fperm & perm) == perm {
+
 		return true
 	}
 
@@ -321,6 +324,23 @@ func (u *VuFs) Walk(req *srv.Req) {
 	wqids := make([]p.Qid, len(tc.Wname))
 	path := fid.path
 	i := 0
+
+	// Ensure execute permission on the walk root.
+	st, err := os.Stat(path)
+	if err != nil {
+		req.RespondError(srv.Enoent)
+		return
+	}
+	f, err := dir2Dir(path, st, req.Conn.Srv.Upool)
+	if err != nil {
+		req.RespondError(toError(err))
+		return
+	}
+	if !CheckPerm(f, req.Fid.User, p.DMEXEC) {
+		req.RespondError(srv.Eperm)
+		return
+	}
+
 	for ; i < len(tc.Wname); i++ {
 
 		var newpath string
