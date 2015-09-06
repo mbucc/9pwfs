@@ -37,6 +37,7 @@ type VuFs struct {
 }
 
 var Enoent = &p.Error{"file not found", p.ENOENT}
+var Eperm = &p.Error{"permission denied", p.EPERM}
 
 func toError(err error) *p.Error {
 	var ecode uint32
@@ -208,7 +209,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 }
 
 
-func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
+func dir2Dir(s string, d os.FileInfo, upool p.Users) (*Dir, error) {
 	sysif := d.Sys()
 	if sysif == nil {
 		return nil, &os.PathError{"dir2Dir", s, nil}
@@ -238,6 +239,50 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
 
 	return &dir.Dir, nil
 }
+
+// Checks if the specified user has permission to perform
+// certain operation on a file. Perm contains one or more
+// of DMREAD, DMWRITE, and DMEXEC.
+func (f *Dir) CheckPerm(user p.User, perm uint32) bool {
+	if user == nil {
+		return false
+	}
+
+	perm &= 7
+
+	/* other permissions */
+	fperm := f.Mode & 7
+	if (fperm & perm) == perm {
+		return true
+	}
+
+	/* user permissions */
+	if f.Uid == user.Name() || f.Uidnum == uint32(user.Id()) {
+		fperm |= (f.Mode >> 6) & 7
+	}
+
+	if (fperm & perm) == perm {
+		return true
+	}
+
+	/* group permissions */
+	groups := user.Groups()
+	if groups != nil && len(groups) > 0 {
+		for i := 0; i < len(groups); i++ {
+			if f.Gid == groups[i].Name() || f.Gidnum == uint32(groups[i].Id()) {
+				fperm |= (f.Mode >> 3) & 7
+				break
+			}
+		}
+	}
+
+	if (fperm & perm) == perm {
+		return true
+	}
+
+	return false
+}
+
 
 
 func (*VuFs) ConnOpened(conn *srv.Conn) {
@@ -311,8 +356,8 @@ func (*VuFs) Walk(req *srv.Req) {
 	path := fid.path
 	i := 0
 	for ; i < len(tc.Wname); i++ {
-		p := path + "/" + tc.Wname[i]
-		st, err := os.Lstat(p)
+		fullpath := path + "/" + tc.Wname[i]
+		st, err := os.Lstat(fullpath)
 		if err != nil {
 			if i == 0 {
 				req.RespondError(Enoent)
@@ -323,7 +368,16 @@ func (*VuFs) Walk(req *srv.Req) {
 		}
 
 		wqids[i] = *dir2Qid(st)
-		path = p
+
+		if (wqids[i].Type & p.QTDIR) > 0 {
+			f, err := dir2Dir(fullpath, st, req.Conn.Srv.Upool) 
+			if !f.CheckPerm(req.Fid.User, p.DMEXEC) {
+				req.RespondError(Eperm)
+				return
+			}
+		}
+
+		path = fullpath
 	}
 
 	nfid.path = path
