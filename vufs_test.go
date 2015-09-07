@@ -8,13 +8,11 @@ import (
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
-	"io"
-	"net"
 	"os"
 	"testing"
 
-	"github.com/lionkov/go9p/p"
-	"github.com/lionkov/go9p/p/clnt"
+	"9fans.net/go/plan9"
+	"9fans.net/go/plan9/client"
 )
 
 const (
@@ -44,7 +42,8 @@ func initfs(rootdir string, mode os.FileMode, userdata string) {
 	//ioutil.WriteFile(rootdir+"/adm/"+uidgidFile, []byte("1:users:adm:adm\n"), 0600)
 }
 
-func runserver(rootdir, port string) net.Conn {
+func runserver(rootdir, port string) *client.Conn {
+fmt.Println("MKB0")
 
 	var err error
 	fs := New(rootdir)
@@ -53,7 +52,7 @@ func runserver(rootdir, port string) net.Conn {
 	if err != nil {
 		panic(err)
 	}
-	//fs.Debuglevel = 1
+	fs.Debuglevel = 5
 
 	fs.Start(fs)
 
@@ -64,38 +63,46 @@ func runserver(rootdir, port string) net.Conn {
 		}
 	}()
 
+fmt.Println("MKB1")
+
 	// Make sure runserver is listening before returning.
-	var conn net.Conn
+	var conn *client.Conn
 	for i := 0; i < 16; i++ {
-		if conn, err = net.Dial("tcp", port); err == nil {
+fmt.Println("MKB2")
+		if conn, err = client.Dial("tcp", port); err == nil {
 			fmt.Printf("Server is up, got connnection %+v\n", conn)
 			break
 		}
+fmt.Println("MKB3")
+
 	}
+fmt.Println("MKB4")
+
 	if err != nil {
-		panic("couldn't connect to runserver after 15 tries")
+		panic("couldn't connect to runserver after 15 tries: " + err.Error())
 	}
+fmt.Println("MKB5")
 
 	return conn
 }
 
-func listDir(conn net.Conn, path string, user p.User) ([]*p.Dir, error) {
+func listDir(conn *client.Conn, path, user string) ([]*plan9.Dir, error) {
 
-	client, err := clnt.MountConn(conn,  "/", messageSizeInBytes, user)
+	fsys, err := conn.Attach(nil, user, "/")
 	if err != nil {
 		return nil, err
 	}
 
 	// file modes: ../../lionkov/go9p/p/p9.go:65,74
-	file, err := client.FOpen("/", p.OREAD)
-	if err != nil && err != io.EOF  {
+	fid, err := fsys.Open("/", plan9.OREAD)
+	if err != nil  {
 		return nil, err
 	}
-	defer file.Close()
+	defer fid.Close()
 
 
 	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
-	d, err := file.Readdir(-1)
+	d, err := fid.Dirreadall()
 	if err != nil  {
 		return nil, err
 	}
@@ -110,61 +117,43 @@ func TestServer(t *testing.T) {
 
 	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n")
 
-	// Kee
 	conn := runserver(rootdir, port)
 
-	adm := &vUser{
-		id:      1,
-		name:    "adm",
-		members: []p.User{},
-		groups:  []p.Group{}}
-
-	mark := &vUser{
-		id:      2,
-		name:    "mark",
-		members: []p.User{},
-		groups:  []p.Group{}}
-
-	hugo := &vUser{
-		id:      3,
-		name:    "hugo",
-		members: []p.User{},
-		groups:  []p.Group{}}
-
-
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
-		var d []*p.Dir
+
+		var d []*plan9.Dir
 
 		Convey("/adm/users is 0600 adm, adm", func() {
-			dirs, err := listDir(conn, "/", adm)
+			dirs, err := listDir(conn, "/",  "adm")
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 		})
 	
 		Convey("A valid user can list the one file in a 0755 root directory", func() {
 			os.Chmod(rootdir, 0755)
-			dirs, err := listDir(conn, "/", mark)
+			dirs, err := listDir(conn, "/", "mark")
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 		})
 
 		Convey("An invalid user cannot list root directory", func() {
 			os.Chmod(rootdir, 0777)
-			_, err := listDir(conn, ".", hugo)
+			_, err := listDir(conn, ".", "hugo")
 			So(err.Error(), ShouldEqual, "unknown user: 22: 0")
 		})
 
 		Convey("A valid user without permissions cannot list files", func() {
 			err := os.Chmod(rootdir, 0700)
 			So(err, ShouldBeNil)
-			d, err = listDir(conn, ".", mark)
+			d, err = listDir(conn, ".", "mark")
 			So(err, ShouldNotBeNil)
 		})
 
 
 	})
 
-	os.RemoveAll(rootdir)
 	conn.Close()
+
+	os.RemoveAll(rootdir)
 
 }
