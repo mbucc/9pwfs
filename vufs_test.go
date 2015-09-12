@@ -112,31 +112,32 @@ func TestServer(t *testing.T) {
 
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
 
-		var d []*plan9.Dir
+		var dirs []*plan9.Dir
+		var err error
 
 		Convey("/adm/users is 0600 adm, adm", func() {
-			dirs, err := listDir(conn, "/", "adm")
+			dirs, err = listDir(conn, "/", "adm")
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 		})
 
 		Convey("A valid user can list the one file in a 0755 root directory", func() {
 			os.Chmod(rootdir, 0755)
-			dirs, err := listDir(conn, "/", "mark")
+			dirs, err = listDir(conn, "/", "mark")
 			So(err, ShouldBeNil)
 			So(len(dirs), ShouldEqual, 1)
 		})
 
 		Convey("An invalid user cannot list root directory", func() {
 			os.Chmod(rootdir, 0777)
-			_, err := listDir(conn, ".", "hugo")
+			_, err = listDir(conn, ".", "hugo")
 			So(err.Error(), ShouldEqual, "unknown user: 22")
 		})
 
 		Convey("A valid user without permissions cannot list files", func() {
-			err := os.Chmod(rootdir, 0700)
+			err = os.Chmod(rootdir, 0700)
 			So(err, ShouldBeNil)
-			d, err = listDir(conn, ".", "mark")
+			dirs, err = listDir(conn, ".", "mark")
 			So(err.Error(), ShouldEqual, "permission denied: 1")
 		})
 
