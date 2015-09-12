@@ -7,7 +7,6 @@ package vufs
 import (
 	"os"
 	"testing"
-
 )
 
 
