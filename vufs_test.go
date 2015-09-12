@@ -85,14 +85,12 @@ func listDir(conn *client.Conn, path, user string) ([]*plan9.Dir, error) {
 		return nil, err
 	}
 
-	// file modes: ../../lionkov/go9p/p/p9.go:65,74
 	fid, err := fsys.Open("/", plan9.OREAD)
 	if err != nil {
 		return nil, err
 	}
 	defer fid.Close()
 
-	// returns an array of Dir instances: ../../lionkov/go9p/p/clnt/read.go:88
 	d, err := fid.Dirreadall()
 	if err != nil {
 		return nil, err
