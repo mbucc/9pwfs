@@ -36,6 +36,7 @@ const (
 //
 //
 func initfs(rootdir string, mode os.FileMode, userdata string) {
+	os.RemoveAll(rootdir)
 	os.Mkdir(rootdir, mode)
 	os.Mkdir(rootdir+"/adm", 0700)
 	ioutil.WriteFile(rootdir+"/adm/users", []byte(userdata), 0600)
@@ -50,7 +51,7 @@ func runserver(rootdir, port string) *client.Conn {
 	if err != nil {
 		panic(err)
 	}
-	//fs.Debuglevel = 5
+	//fs.Debuglevel = 1
 
 	fs.Start(fs)
 
@@ -104,7 +105,7 @@ func TestServer(t *testing.T) {
 
 	rootdir := "./tmpfs"
 
-	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n")
+	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n3:other:other\n")
 
 	conn := runserver(rootdir, port)
 
@@ -139,10 +140,35 @@ func TestServer(t *testing.T) {
 			So(err.Error(), ShouldEqual, "permission denied: 1")
 		})
 
+		Convey("Given the file 0600 test.txt adm, mark ", func() {
+
+			fn := "test.txt"
+			os.RemoveAll(rootdir+"/" + fn)
+			ioutil.WriteFile(rootdir+"/" + fn, []byte("whatever"), 0600)
+			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":2:2\n"), 0600)
+
+			Convey("adm should not be able to read it ", func() {
+				fsys, err := conn.Attach(nil, "adm", "/")
+				So(err, ShouldBeNil)
+				_, err = fsys.Open("/" + fn, plan9.OREAD)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "permission denied: 1")
+			})
+
+		})
+
+// adm mark other
+// 0400	read: Y N N	write: N N N
+// 0600	read: Y N N	write: Y N N
+// 0640	read: Y Y N	write: Y N N
+// 0644	read: Y Y Y	write: Y N N
+// 0664	read: Y Y N	write: Y Y N
+// 0666	read: Y Y N	write: Y Y N
+
 	})
 
 	conn.Close()
 
-	os.RemoveAll(rootdir)
+	//os.RemoveAll(rootdir)
 
 }

@@ -123,15 +123,17 @@ func atouid(id string, upool p.Users) (string, error) {
 
 }
 
-// Lookup (uid, gid) in uidgidFile and return (user,group).  If not found return (adm, adm).
+// Lookup (uid, gid) for a file (path = full path to file, e.g. './tmpfs/test.txt')
 func path2UserGroup(path string, upool p.Users) (string, string, error) {
 
 	// Default owner/group is adm.
 	user := "adm"
 	group := "adm"
 
-	fn := filepath.Join(filepath.Dir(path), uidgidFile)
-	data, err := ioutil.ReadFile(fn)
+	dn := filepath.Dir(path)
+	fn := filepath.Base(path)
+
+	data, err := ioutil.ReadFile(filepath.Join(dn, uidgidFile))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return user, group, nil
@@ -153,7 +155,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 			continue
 		}
 
-		if columns[0] == path {
+		if columns[0] == fn {
 
 			user, err = atouid(columns[1], upool)
 
@@ -202,6 +204,25 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
 	dir.Uid, dir.Gid = uid, gid
 
 	return dir, nil
+}
+
+func mode2Perm(mode uint8) uint32 {
+	var perm uint32 = 0
+
+	switch mode & 3 {
+	case p.OREAD:
+		perm = p.DMREAD
+	case p.OWRITE:
+		perm = p.DMWRITE
+	case p.ORDWR:
+		perm = p.DMREAD | p.DMWRITE
+	}
+
+	if (mode & p.OTRUNC) != 0 {
+		perm |= p.DMWRITE
+	}
+
+	return perm
 }
 
 // Checks if the specified user has permission to perform
@@ -393,9 +414,20 @@ func (u *VuFs) Walk(req *srv.Req) {
 func (u *VuFs) Open(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
-	st, err := os.Stat(u.Root)
+
+	// Ensure open permission.
+	st, err := os.Stat(fid.path)
+	if err != nil {
+		req.RespondError(srv.Enoent)
+		return
+	}
+	f, err := dir2Dir(fid.path, st, req.Conn.Srv.Upool)
 	if err != nil {
 		req.RespondError(toError(err))
+		return
+	}
+	if !CheckPerm(f, req.Fid.User, mode2Perm(tc.Mode)) {
+		req.RespondError(srv.Eperm)
 		return
 	}
 
