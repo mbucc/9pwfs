@@ -140,7 +140,7 @@ func TestServer(t *testing.T) {
 			So(err.Error(), ShouldEqual, "permission denied: 1")
 		})
 
-		Convey("Given the file 0600 test.txt adm, mark ", func() {
+		Convey("Given the file: 0600 mark mark test.txt", func() {
 
 			fn := "test.txt"
 			os.RemoveAll(rootdir+"/" + fn)
@@ -148,11 +148,13 @@ func TestServer(t *testing.T) {
 			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":2:2\n"), 0600)
 
 			Convey("adm should not be able to read it ", func() {
+
 				fsys, err := conn.Attach(nil, "adm", "/")
 				So(err, ShouldBeNil)
 				_, err = fsys.Open("/" + fn, plan9.OREAD)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "permission denied: 1")
+
 			})
 
 		})
