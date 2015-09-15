@@ -111,8 +111,11 @@ func TestServer(t *testing.T) {
 
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
 
+		var fsys *client.Fsys
 		var dirs []*plan9.Dir
 		var err error
+		var fid *client.Fid
+		var n int
 
 		Convey("/adm/users is 0600 adm, adm", func() {
 			dirs, err = listDir(conn, "/", "adm")
@@ -141,16 +144,18 @@ func TestServer(t *testing.T) {
 		})
 
 		Convey("Given an 0755 root and the file: 0600 mark mark test.txt", func() {
+
 			os.Chmod(rootdir, 0755)
 
 			fn := "test.txt"
+
 			os.RemoveAll(rootdir+"/" + fn)
 			ioutil.WriteFile(rootdir+"/" + fn, []byte("whatever"), 0600)
 			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":2:2\n"), 0600)
 
 			Convey("adm should not be able to read it ", func() {
 
-				fsys, err := conn.Attach(nil, "adm", "/")
+				fsys, err = conn.Attach(nil, "adm", "/")
 				So(err, ShouldBeNil)
 				_, err = fsys.Open("/" + fn, plan9.OREAD)
 				So(err, ShouldNotBeNil)
@@ -160,7 +165,7 @@ func TestServer(t *testing.T) {
 
 			Convey("mark should be able to read it ", func() {
 
-				fsys, err := conn.Attach(nil, "mark", "/")
+				fsys, err = conn.Attach(nil, "mark", "/")
 				So(err, ShouldBeNil)
 				_, err = fsys.Open("/" + fn, plan9.OREAD)
 				So(err, ShouldBeNil)
@@ -169,12 +174,45 @@ func TestServer(t *testing.T) {
 
 			Convey("other should not be able to read it ", func() {
 
-				fsys, err := conn.Attach(nil, "other", "/")
+				fsys, err = conn.Attach(nil, "other", "/")
 				So(err, ShouldBeNil)
 				_, err = fsys.Open("/" + fn, plan9.OREAD)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "permission denied: 1")
 
+			})
+
+
+			Convey("mark should be able to write to it ", func() {
+
+				fsys, err = conn.Attach(nil, "mark", "/")
+				So(err, ShouldBeNil)
+				fid, err = fsys.Open("/" + fn, plan9.OWRITE)
+				So(err, ShouldBeNil)
+				n, err = fid.Write([]byte("whom"))
+				So(err, ShouldBeNil)
+				So(n, ShouldEqual, 4)
+				err = fid.Close()
+				So(err, ShouldBeNil)
+
+				contents, err := ioutil.ReadFile(rootdir + "/" + fn)
+				So(err, ShouldBeNil)
+				So(string(contents), ShouldEqual, "whomever")
+
+			})
+
+
+			Convey("adm and other should not be able to write it ", func() {
+
+				fsys, err = conn.Attach(nil, "adm", "/")
+				So(err, ShouldBeNil)
+				_, err = fsys.Open("/" + fn, plan9.OWRITE)
+				So(err.Error(), ShouldEqual, "permission denied: 1")
+
+				fsys, err = conn.Attach(nil, "other", "/")
+				So(err, ShouldBeNil)
+				_, err = fsys.Open("/" + fn, plan9.OWRITE)
+				So(err.Error(), ShouldEqual, "permission denied: 1")
 			})
 
 		})
