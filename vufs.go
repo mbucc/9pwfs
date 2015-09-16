@@ -302,6 +302,7 @@ func (u *VuFs) Attach(req *srv.Req) {
 
 	if req.Tc.Aname != "/" && req.Tc.Aname != "" {
 		req.RespondError(srv.Eperm)
+		return
 	}
 
 	st, err := os.Stat(u.Root)

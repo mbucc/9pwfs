@@ -18,7 +18,10 @@ import (
 const (
 	port               = ":5000"
 	messageSizeInBytes = 8192
+	rootdir = "./tmpfs"
 )
+
+
 
 // Initialize file system as:
 //
@@ -101,9 +104,58 @@ func listDir(conn *client.Conn, path, user string) ([]*plan9.Dir, error) {
 
 }
 
-func TestServer(t *testing.T) {
+func read(conn *client.Conn, username, filepath string) (string, error) {
 
-	rootdir := "./tmpfs"
+	fsys, err := conn.Attach(nil, username, "/")
+
+	if err != nil {
+		return "", err
+	}
+
+	fid, err := fsys.Open(filepath, plan9.OREAD)
+
+	if err != nil {
+		return "", err
+	}
+
+	defer fid.Close()
+
+	contents, err := ioutil.ReadAll(fid)
+
+	return string(contents), err
+
+}
+
+// Return bytes written, resulting content, and any error.
+func write(conn *client.Conn, username, filepath, contents string) (int, string, error) {
+
+	fsys, err := conn.Attach(nil, username, "/")
+
+	if err != nil {
+		return 0, "", err
+	}
+
+	fid, err := fsys.Open(filepath, plan9.OWRITE)
+
+	if err != nil {
+		return 0, "", err
+	}
+
+	defer fid.Close()
+
+	n, err := fid.Write([]byte("whom"))
+
+	if err != nil {
+		return n, "", err
+	}
+
+	newcontents, err := ioutil.ReadFile(rootdir + "/" + filepath)
+
+	return n, string(newcontents), err
+
+}
+
+func TestServer(t *testing.T) {
 
 	initfs(rootdir, 0755, "1:adm:adm\n2:mark:mark\n3:other:other\n")
 
@@ -111,36 +163,51 @@ func TestServer(t *testing.T) {
 
 	Convey("Given a vufs rooted in a directory and a client", t, func() {
 
-		var fsys *client.Fsys
 		var dirs []*plan9.Dir
 		var err error
-		var fid *client.Fid
-		var n int
 
 		Convey("/adm/users is 0600 adm, adm", func() {
+
 			dirs, err = listDir(conn, "/", "adm")
+
 			So(err, ShouldBeNil)
+
 			So(len(dirs), ShouldEqual, 1)
+
 		})
 
 		Convey("A valid user can list the one file in a 0755 root directory", func() {
+
 			os.Chmod(rootdir, 0755)
+
 			dirs, err = listDir(conn, "/", "mark")
+
 			So(err, ShouldBeNil)
+
 			So(len(dirs), ShouldEqual, 1)
+
 		})
 
-		Convey("An invalid user cannot list root directory", func() {
+		Convey("An invalid user cannot list a 0777 root directory", func() {
+
 			os.Chmod(rootdir, 0777)
+
 			_, err = listDir(conn, ".", "hugo")
+
 			So(err.Error(), ShouldEqual, "unknown user: 22")
+
 		})
 
-		Convey("A valid user without permissions cannot list files", func() {
+		Convey("A valid user can't list a 0700 directory they don't own", func() {
+
 			err = os.Chmod(rootdir, 0700)
+
 			So(err, ShouldBeNil)
+
 			dirs, err = listDir(conn, ".", "mark")
+
 			So(err.Error(), ShouldEqual, "permission denied: 1")
+
 		})
 
 		Convey("Given an 0755 root and the file: 0600 mark mark test.txt", func() {
@@ -149,35 +216,37 @@ func TestServer(t *testing.T) {
 
 			fn := "test.txt"
 
-			os.RemoveAll(rootdir+"/" + fn)
-			ioutil.WriteFile(rootdir+"/" + fn, []byte("whatever"), 0600)
+			realpath := rootdir+"/" + fn
+
+			os.RemoveAll(realpath)
+
+			ioutil.WriteFile(realpath, []byte("whatever"), 0600)
+
 			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":2:2\n"), 0600)
 
 			Convey("adm should not be able to read it ", func() {
 
-				fsys, err = conn.Attach(nil, "adm", "/")
-				So(err, ShouldBeNil)
-				_, err = fsys.Open("/" + fn, plan9.OREAD)
-				So(err, ShouldNotBeNil)
+				_, err := read(conn, "adm", "/" + fn)
+
 				So(err.Error(), ShouldEqual, "permission denied: 1")
 
 			})
 
 			Convey("mark should be able to read it ", func() {
 
-				fsys, err = conn.Attach(nil, "mark", "/")
+				contents, err := read(conn, "mark", fn)
+
 				So(err, ShouldBeNil)
-				_, err = fsys.Open("/" + fn, plan9.OREAD)
-				So(err, ShouldBeNil)
+
+				So(contents, ShouldEqual, "whatever")
+
 			})
 
 
 			Convey("other should not be able to read it ", func() {
 
-				fsys, err = conn.Attach(nil, "other", "/")
-				So(err, ShouldBeNil)
-				_, err = fsys.Open("/" + fn, plan9.OREAD)
-				So(err, ShouldNotBeNil)
+				_, err := read(conn, "other", fn)
+
 				So(err.Error(), ShouldEqual, "permission denied: 1")
 
 			})
@@ -185,37 +254,61 @@ func TestServer(t *testing.T) {
 
 			Convey("mark should be able to write to it ", func() {
 
-				fsys, err = conn.Attach(nil, "mark", "/")
-				So(err, ShouldBeNil)
-				fid, err = fsys.Open("/" + fn, plan9.OWRITE)
-				So(err, ShouldBeNil)
-				n, err = fid.Write([]byte("whom"))
-				So(err, ShouldBeNil)
-				So(n, ShouldEqual, 4)
-				err = fid.Close()
+				n, newcontents, err := write(conn, "mark", fn, "whom")
+
 				So(err, ShouldBeNil)
 
-				contents, err := ioutil.ReadFile(rootdir + "/" + fn)
-				So(err, ShouldBeNil)
-				So(string(contents), ShouldEqual, "whomever")
+				So(n, ShouldEqual, 4)
+
+				So(newcontents, ShouldEqual, "whomever")
 
 			})
 
 
 			Convey("adm and other should not be able to write it ", func() {
 
-				fsys, err = conn.Attach(nil, "adm", "/")
-				So(err, ShouldBeNil)
-				_, err = fsys.Open("/" + fn, plan9.OWRITE)
-				So(err.Error(), ShouldEqual, "permission denied: 1")
+				users := []string{"adm","other"}
 
-				fsys, err = conn.Attach(nil, "other", "/")
-				So(err, ShouldBeNil)
-				_, err = fsys.Open("/" + fn, plan9.OWRITE)
-				So(err.Error(), ShouldEqual, "permission denied: 1")
+				for i := range users {
+
+					_, _, err = write(conn, users[i], fn, "whom")
+
+					So(err.Error(), ShouldEqual, "permission denied: 1")
+				}
+
 			})
 
 		})
+
+
+
+		Convey("Given an 0755 root and the file: 0664 adm mark test.txt", func() {
+
+			os.Chmod(rootdir, 0755)
+
+			fn := "test.txt"
+
+			os.RemoveAll(rootdir+"/" + fn)
+			ioutil.WriteFile(rootdir+"/" + fn, []byte("whatever"), 0664)
+			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":1:2\n"), 0600)
+
+			Convey("adm, mark and other should be able to read it ", func() {
+
+				users := []string{"mark", "adm","other"}
+
+				for i := range users {
+
+					contents, err := read(conn, users[i], fn)
+
+					So(err, ShouldBeNil)
+
+					So(contents, ShouldEqual, "whatever")
+
+				}
+
+			})
+		})
+
 
 // adm mark other
 // 0400	read: Y N N	write: N N N
