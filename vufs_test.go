@@ -307,6 +307,24 @@ func TestServer(t *testing.T) {
 				}
 
 			})
+
+			Convey("adm and mark should be able to write it ", func() {
+
+				users := []string{"mark", } //"adm" }
+
+				for i := range users {
+	
+					n, newcontents, err := write(conn, users[i], fn, "whom")
+	
+					So(err, ShouldBeNil)
+	
+					So(n, ShouldEqual, 4)
+	
+					So(newcontents, ShouldEqual, "whomever")
+
+			}
+
+			})
 		})
 
 
