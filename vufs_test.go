@@ -291,7 +291,6 @@ func TestFiles(t *testing.T) {
 }
 
 
-
 var fileTests []fileTest = []fileTest {
 
 	// Root directory
@@ -362,6 +361,4 @@ var fileTests []fileTest = []fileTest {
 	{"/larry-moe.txt", 0660, "write", "moe", true},
 	{"/larry-moe.txt", 0660, "write", "larry", true},
 	{"/larry-moe.txt", 0660, "write", "curly", false},
-
-
 }
