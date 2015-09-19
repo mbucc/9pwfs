@@ -15,7 +15,7 @@ func TestLock(t *testing.T) {
 
 	rootdir := "./tmpfs"
 
-	initfs(rootdir, "1:adm:adm\n2:mark:mark\n")
+	initfs(rootdir)
 	defer os.RemoveAll(rootdir)
 
 	conn := runserver(rootdir, ":5000")
