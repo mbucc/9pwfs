@@ -22,6 +22,29 @@ const (
 	rootdir            = "./tmpfs"
 )
 
+type fileTest struct {
+	path    string
+	mode    os.FileMode
+	op      string
+	user    string
+	allowed bool
+}
+
+func (ft fileTest) String() string {
+	v := "cannot"
+	if ft.allowed {
+		v = "can"
+	}
+	return fmt.Sprintf("%s %s %s '%s' %s",  ft.user, v, ft.op, ft.path, ft.mode)
+}
+
+var expectedContents = map[string]string {
+	"/": ".uidgid, adm, larry-moe.txt, moe-moe.txt",
+	"/moe-moe.txt": "whatever",
+	"/larry-moe.txt": "whatever",
+
+}
+
 // Initialize file system as:
 //
 //          /
@@ -204,127 +227,6 @@ func write(conn *client.Conn, username, filepath, contents string) (int, string,
 
 }
 
-/*
-
-func TestServer(t *testing.T) {
-
-	initfs(rootdir, 0755, "1:adm:adm\n2:moe:moe\n3:curly:curly\n")
-
-	conn := runserver(rootdir, port)
-
-	Convey("Given a vufs rooted in a directory and a client", t, func() {
-
-		var dirs []*plan9.Dir
-		var err error
-
-		Convey("Given an 0755 root and the file: 0600 moe moe moe-moe.txt", func() {
-
-			os.Chmod(rootdir, 0755)
-
-			fn := "moe-moe.txt"
-
-			realpath := rootdir+"/" + fn
-
-			os.RemoveAll(realpath)
-
-			ioutil.WriteFile(realpath, []byte("whatever"), 0600)
-
-			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":2:2\n"), 0600)
-
-
-			Convey("moe should be able to write to it ", func() {
-
-				n, newcontents, err := write(conn, "moe", fn, "whom")
-
-				So(err, ShouldBeNil)
-
-				So(n, ShouldEqual, 4)
-
-				So(newcontents, ShouldEqual, "whomever")
-
-			})
-
-
-			Convey("adm and curly should not be able to write it ", func() {
-
-				users := []string{"adm","curly"}
-
-				for i := range users {
-
-					_, _, err = write(conn, users[i], fn, "whom")
-
-					So(err.Error(), ShouldEqual, "permission denied: 1")
-				}
-
-			})
-
-		})
-
-
-
-		Convey("Given an 0755 root and the file: 0664 adm moe moe-moe.txt", func() {
-
-			os.Chmod(rootdir, 0755)
-
-			fn := "moe-moe.txt"
-
-			os.RemoveAll(rootdir+"/" + fn)
-			ioutil.WriteFile(rootdir+"/" + fn, []byte("whatever"), 0664)
-			ioutil.WriteFile(rootdir+"/"+uidgidFile, []byte(fn + ":1:2\n"), 0600)
-
-			Convey("adm, moe and curly should be able to read it ", func() {
-
-				users := []string{"moe", "adm","curly"}
-
-				for i := range users {
-
-					contents, err := read(conn, users[i], fn)
-
-					So(err, ShouldBeNil)
-
-					So(contents, ShouldEqual, "whatever")
-
-				}
-
-			})
-
-			Convey("adm and moe should be able to write it ", func() {
-
-				users := []string{"moe", } //"adm" }
-
-				for i := range users {
-
-					n, newcontents, err := write(conn, users[i], fn, "whom")
-
-					So(err, ShouldBeNil)
-
-					So(n, ShouldEqual, 4)
-
-					So(newcontents, ShouldEqual, "whomever")
-
-			}
-
-			})
-		})
-
-
-// adm moe curly
-// 0400	read: Y N N	write: N N N
-// 0600	read: Y N N	write: Y N N
-// 0640	read: Y Y N	write: Y N N
-// 0644	read: Y Y Y	write: Y N N
-// 0664	read: Y Y N	write: Y Y N
-// 0666	read: Y Y N	write: Y Y N
-
-	})
-
-	conn.Close()
-
-	//os.RemoveAll(rootdir)
-
-}
-
-*/
 
 func TestFiles(t *testing.T) {
 
@@ -343,22 +245,43 @@ func TestFiles(t *testing.T) {
 		switch tt.op {
 
 		default:
-			t.Errorf("Unsupported operation in %+v\n", tt)
+			t.Errorf("Unsupported operation %s in fileTest = %s\n", tt.op, tt)
+
+		case "write":
+			n, newcontents, err := write(conn, tt.user, tt.path, "whom")
+			if tt.allowed {
+				if err != nil {
+					t.Errorf("%s: %v\n", tt, err)
+				} else if n != 4 {
+					t.Errorf("%s: exp = 4, act = %d\n", tt, n)
+				} else if newcontents != "whomever" {
+					t.Errorf("%s: exp = 'whomever', act = '%s'\n", tt, newcontents)
+				} else {
+					// EMPTY --- test passed.
+				}
+			
+			} else {
+				if err == nil {
+					t.Errorf("%s: was allowed\n", tt)
+				} else {
+					// EMPTY --- test passed.
+				}
+			}
 
 		case "read":
 			contents, err := read(conn, tt.user, tt.path)
 			if tt.allowed {
 				if err != nil {
-					t.Errorf("%s: expected to be able to read, got %v\n", tt, err)
+					t.Errorf("%s: %v\n", tt, err)
 				} else if contents != expectedContents[tt.path] {
-					t.Errorf("%v expected '%s', got '%s'\n", 
-							tt, expectedContents[tt.path], contents)
+					t.Errorf("%s: exp = '%s', act = '%s'\n", 
+							expectedContents[tt.path], contents)
 				} else {
 					// EMPTY --- test passed.
 				}
 			} else {
 				if err == nil {
-					t.Errorf("%+v: should have gotten an error\n", tt)
+					t.Errorf("%s: was allowed\n", tt)
 				} else {
 					// EMPTY --- test passed.
 				}
@@ -367,28 +290,7 @@ func TestFiles(t *testing.T) {
 	}
 }
 
-var expectedContents = map[string]string {
-	"/": ".uidgid, adm, larry-moe.txt, moe-moe.txt",
-	"/moe-moe.txt": "whatever",
-	"/larry-moe.txt": "whatever",
 
-}
-
-type fileTest struct {
-	path    string
-	mode    os.FileMode
-	op      string
-	user    string
-	allowed bool
-}
-
-func (ft fileTest) String() string {
-	v := "cannot"
-	if ft.allowed {
-		v = "can"
-	}
-	return fmt.Sprintf("%s %s %s '%s' %s",  ft.user, v, ft.op, ft.path, ft.mode)
-}
 
 var fileTests []fileTest = []fileTest {
 
@@ -410,10 +312,6 @@ var fileTests []fileTest = []fileTest {
 	{"/moe-moe.txt", 0600, "read", "moe", true},
 	{"/moe-moe.txt", 0600, "read", "curly", false},
 
-	{"/moe-moe.txt", 0400, "read", "adm", false},
-	{"/moe-moe.txt", 0400, "read", "moe", true},
-	{"/moe-moe.txt", 0400, "read", "curly", false},
-
 	{"/moe-moe.txt", 0440, "read", "adm", false},
 	{"/moe-moe.txt", 0440, "read", "moe", true},
 	{"/moe-moe.txt", 0440, "read", "curly", false},
@@ -428,11 +326,6 @@ var fileTests []fileTest = []fileTest {
 	{"/larry-moe.txt", 0600, "read", "larry", true},
 	{"/larry-moe.txt", 0600, "read", "curly", false},
 
-	{"/larry-moe.txt", 0400, "read", "adm", false},
-	{"/larry-moe.txt", 0400, "read", "moe", false},
-	{"/larry-moe.txt", 0400, "read", "larry", true},
-	{"/larry-moe.txt", 0400, "read", "curly", false},
-
 	{"/larry-moe.txt", 0440, "read", "adm", false},
 	{"/larry-moe.txt", 0440, "read", "moe", true},
 	{"/larry-moe.txt", 0440, "read", "larry", true},
@@ -442,6 +335,33 @@ var fileTests []fileTest = []fileTest {
 	{"/larry-moe.txt", 0444, "read", "moe", true},
 	{"/larry-moe.txt", 0444, "read", "larry", true},
 	{"/larry-moe.txt", 0444, "read", "curly", true},
+
+	// Write file with same user and group (moe)
+	{"/moe-moe.txt", 0400, "write", "moe", false},
+	{"/moe-moe.txt", 0440, "write", "moe", false},
+	{"/moe-moe.txt", 0444, "write", "moe", false},
+	{"/moe-moe.txt", 0200, "write", "moe", false},
+	{"/moe-moe.txt", 0000, "write", "moe", false},
+
+	{"/moe-moe.txt", 0600, "write", "moe", true},
+	{"/moe-moe.txt", 0600, "write", "adm", false},
+	{"/moe-moe.txt", 0600, "write", "curly", false},
+
+	{"/moe-moe.txt", 0660, "write", "adm", false},
+	{"/moe-moe.txt", 0660, "write", "curly", false},
+	{"/moe-moe.txt", 0666, "write", "adm", true},
+	{"/moe-moe.txt", 0666, "write", "curly", true},
+
+	// Write file with different user (larry) and group (moe)
+	{"/larry-moe.txt", 0600, "write", "adm", false},
+	{"/larry-moe.txt", 0600, "write", "moe", false},
+	{"/larry-moe.txt", 0600, "write", "larry", true},
+	{"/larry-moe.txt", 0600, "write", "curly", false},
+
+	{"/larry-moe.txt", 0660, "write", "adm", false},
+	{"/larry-moe.txt", 0660, "write", "moe", true},
+	{"/larry-moe.txt", 0660, "write", "larry", true},
+	{"/larry-moe.txt", 0660, "write", "curly", false},
 
 
 }
