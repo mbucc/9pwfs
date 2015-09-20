@@ -227,6 +227,45 @@ func write(conn *client.Conn, username, filepath, contents string) (int, string,
 
 }
 
+// Create file or directory.
+func create(conn *client.Conn, username, filepath string, mode os.FileMode) error {
+
+	fsys, err := conn.Attach(nil, username, "/")
+
+	if err != nil {
+		return err
+	}
+
+	fid, err := fsys.Create(filepath, plan9.OREAD, plan9.Perm(mode))
+
+	if err != nil {
+		return err
+	}
+
+	fid.Close()
+
+	return nil
+}
+
+// Return owner and group of given file.
+func uidgid(conn *client.Conn, filepath string) (string, string, error) {
+
+	fsys, err := conn.Attach(nil, "adm", "/")
+
+	if err != nil {
+		return "", "", err
+	}
+
+	dir, err := fsys.Stat(filepath)
+
+	if err != nil {
+		return "", "", err
+	}
+
+	return dir.Uid, dir.Gid, nil
+}
+
+
 
 func TestFiles(t *testing.T) {
 
@@ -236,54 +275,77 @@ func TestFiles(t *testing.T) {
 
 	for _, tt := range fileTests {
 
-		err := os.Chmod(rootdir+tt.path, tt.mode)
-
-		if err != nil {
-			t.Errorf("%+v: chmod failed: %v\n", tt, err)
-		}
-
 		switch tt.op {
 
 		default:
 			t.Errorf("Unsupported operation %s in fileTest = %s\n", tt.op, tt)
 
+		case "create":
+			err := create(conn, tt.user, tt.path, tt.mode)
+			if tt.allowed {
+				if err != nil {
+					t.Errorf("%s: %v\n", tt, err)
+				} 
+				owner, _, err := uidgid(conn, tt.path)
+				if err != nil {
+					t.Errorf("%s: couldn't stat file, got %v\n", tt, err)
+				} 
+		
+				if owner != tt.user {
+					t.Errorf("%s: wrong owner, got '%s', expected '%s'\n", 
+							tt, owner, tt.user)
+				}
+
+			} else {
+				if err == nil {
+					t.Errorf("%s: was allowed\n", tt)
+				}
+			}
+
 		case "write":
+			err := os.Chmod(rootdir+tt.path, tt.mode)
+			if err != nil {
+				t.Errorf("%+v: chmod failed: %v\n", tt, err)
+			}
+
 			n, newcontents, err := write(conn, tt.user, tt.path, "whom")
 			if tt.allowed {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
-				} else if n != 4 {
+				} 
+
+				if n != 4 {
 					t.Errorf("%s: exp = 4, act = %d\n", tt, n)
-				} else if newcontents != "whomever" {
+				} 
+
+				if newcontents != "whomever" {
 					t.Errorf("%s: exp = 'whomever', act = '%s'\n", tt, newcontents)
-				} else {
-					// EMPTY --- test passed.
 				}
 			
 			} else {
 				if err == nil {
 					t.Errorf("%s: was allowed\n", tt)
-				} else {
-					// EMPTY --- test passed.
 				}
 			}
 
 		case "read":
+			err := os.Chmod(rootdir+tt.path, tt.mode)
+			if err != nil {
+				t.Errorf("%+v: chmod failed: %v\n", tt, err)
+			}
 			contents, err := read(conn, tt.user, tt.path)
 			if tt.allowed {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
-				} else if contents != expectedContents[tt.path] {
+				}
+				if contents != expectedContents[tt.path] {
 					t.Errorf("%s: exp = '%s', act = '%s'\n", 
 							expectedContents[tt.path], contents)
-				} else {
-					// EMPTY --- test passed.
 				}
+
 			} else {
 				if err == nil {
 					t.Errorf("%s: was allowed\n", tt)
-				} else {
-					// EMPTY --- test passed.
 				}
 			}
 		}
@@ -361,4 +423,7 @@ var fileTests []fileTest = []fileTest {
 	{"/larry-moe.txt", 0660, "write", "moe", true},
 	{"/larry-moe.txt", 0660, "write", "larry", true},
 	{"/larry-moe.txt", 0660, "write", "curly", false},
+
+	// Create a directory as adm
+	{"/books", os.ModeDir + 0755, "create", "adm", true},
 }
