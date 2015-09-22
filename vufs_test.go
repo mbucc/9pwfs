@@ -22,7 +22,8 @@ const (
 	rootdir            = "./tmpfs"
 )
 
-type fileTest struct {
+// optest is a test of one file operation; for example, "read contents of / as user moe".
+type optest struct {
 	path    string
 	mode    os.FileMode
 	op      string
@@ -30,7 +31,7 @@ type fileTest struct {
 	allowed bool
 }
 
-func (ft fileTest) String() string {
+func (ft optest) String() string {
 	v := "cannot"
 	if ft.allowed {
 		v = "can"
@@ -38,11 +39,26 @@ func (ft fileTest) String() string {
 	return fmt.Sprintf("%s %s %s '%s' %s",  ft.user, v, ft.op, ft.path, ft.mode)
 }
 
-var expectedContents = map[string]string {
-	"/": ".uidgid, adm, larry-moe.txt, moe-moe.txt",
-	"/moe-moe.txt": "whatever",
-	"/larry-moe.txt": "whatever",
+// initialFile is a file on disk used for testing.
+type initialFile struct {
+	path string
+	contents	string
+	mode	os.FileMode
+}
 
+func (f initialFile) String() string {
+	return fmt.Sprintf("%s %s",  f.path, f.mode)
+}
+
+var initialFiles = map[string]initialFile {
+	"/": {"/",  ".uidgid, adm, larry-moe.txt, moe-moe.txt", 0775},
+	"/adm/": {"/adm/", "", 0775},
+	"/adm/users": {"/adm/users", 
+			"1:adm:adm\n2:larry:larry\n3:moe:moe\n4:curly:curly\n", 
+			0600},
+	"/moe-moe.txt": {"/moe-moe.txt", "whatever",  0664},
+	"/larry-moe.txt": {"/larry-moe.txt", "whatever", 0664},
+	"/" + uidgidFile: {"/" + uidgidFile, "moe-moe.txt:3:3\nlarry-moe.txt:2:3\n", 0600},
 }
 
 // Initialize file system as:
@@ -56,7 +72,7 @@ var expectedContents = map[string]string {
 //           +-- .uidgid          --rw-rw---- adm moe
 //           |
 //           +-- moe-moe.txt     --rw-rw-r-- moe moe
-//           |
+//           |  
 //           +-- larry-moe.txt     --rw-rw-r-- larry moe
 //
 //         Notes:
@@ -69,6 +85,8 @@ var expectedContents = map[string]string {
 func initfs(rootdir string) {
 
 	// Begin anew.
+
+	// Remove entire file system and recreate root folder
 	err := os.RemoveAll(rootdir)
 	if err != nil {
 		msg := fmt.Sprintf("os.RemoveAll(%s) failed: %v\n", rootdir, err)
@@ -80,43 +98,32 @@ func initfs(rootdir string) {
 		panic(msg)
 	}
 
-	// Write users and their ID's.
-	err = os.Mkdir(rootdir+"/adm", 0700)
-	if err != nil {
-		msg := fmt.Sprintf("os.Mkdir(%s, 0700) failed: %v\n", rootdir+"/adm", err)
-		panic(msg)
-	}
-	err = ioutil.WriteFile(rootdir+"/adm/users", 
-			[]byte("1:adm:adm\n2:larry:larry\n3:moe:moe\n4:curly:curly\n"), 0600)
-	if err != nil {
-		msg := fmt.Sprintf("ioutil.WriteFile(%s, 0600) failed: %v\n", 
-				rootdir+"/adm/users", err)
-		panic(msg)
+	// Create initial filesystem.  Directories first
+	for path, f := range initialFiles {
+		if path[len(path)-1] != '/' {
+			continue
+		}
+		p := rootdir + f.path
+		err = os.MkdirAll(p, f.mode)
+		if err != nil {
+			panic(fmt.Sprintf("os.MkdirAll(%s, %s) failed: %v\n", p, f.mode, err))
+		}
 	}
 
-	// Create files for testing.
-	err = ioutil.WriteFile(rootdir+"/moe-moe.txt", []byte("whatever"), 0664)
-	if err != nil {
-		msg := fmt.Sprintf("ioutil.WriteFile(%s, 0664) failed: %v\n", 
-				rootdir+"/moe-moe.txt", err)
-		panic(msg)
-	}
-	err = ioutil.WriteFile(rootdir+"/larry-moe.txt", []byte("whatever"), 0664)
-	if err != nil {
-		msg := fmt.Sprintf("ioutil.WriteFile(%s, 0664) failed: %v\n", 
-				rootdir+"/moe-moe.txt", err)
-		panic(msg)
-	}
-
-	// Record file ownership.
-	err = ioutil.WriteFile(rootdir+"/"+uidgidFile, 
-			[]byte("moe-moe.txt:3:3\nlarry-moe.txt:2:3\n"), 0600)
-	if err != nil {
-		msg := fmt.Sprintf("ioutil.WriteFile(%s, 0600) failed: %v\n", 
-			rootdir+"/moe-moe.txt", err)
-		panic(msg)
+	// Now that directories are created, do files.
+	for path, f := range initialFiles {
+		if path[len(path)-1] == '/' {
+			continue
+		}
+		p := rootdir + f.path
+	
+		err = ioutil.WriteFile(p, []byte(f.contents), f.mode)
+		if err != nil {
+			panic(fmt.Sprintf("ioutil.WriteFile(%s, %s) failed: %v\n", p, f.mode, err))
+		}
 	}
 }
+
 
 func runserver(rootdir, port string) *client.Conn {
 
@@ -248,7 +255,7 @@ func create(conn *client.Conn, username, filepath string, mode os.FileMode) erro
 }
 
 // Return owner and group of given file.
-func uidgid(conn *client.Conn, filepath string) (string, string, error) {
+func usergroup(conn *client.Conn, filepath string) (string, string, error) {
 
 	fsys, err := conn.Attach(nil, "adm", "/")
 
@@ -269,16 +276,17 @@ func uidgid(conn *client.Conn, filepath string) (string, string, error) {
 
 func TestFiles(t *testing.T) {
 
-	initfs(rootdir)
 
 	conn := runserver(rootdir, port)
 
-	for _, tt := range fileTests {
+	for _, tt := range optests {
+
+		initfs(rootdir)
 
 		switch tt.op {
 
 		default:
-			t.Errorf("Unsupported operation %s in fileTest = %s\n", tt.op, tt)
+			t.Errorf("Unsupported operation %s in optest = %s\n", tt.op, tt)
 
 		case "create":
 			err := create(conn, tt.user, tt.path, tt.mode)
@@ -286,14 +294,19 @@ func TestFiles(t *testing.T) {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
 				} 
-				owner, _, err := uidgid(conn, tt.path)
+				user, group, err := usergroup(conn, tt.path)
 				if err != nil {
 					t.Errorf("%s: couldn't stat file, got %v\n", tt, err)
 				} 
 		
-				if owner != tt.user {
-					t.Errorf("%s: wrong owner, got '%s', expected '%s'\n", 
-							tt, owner, tt.user)
+				if user != tt.user {
+					t.Errorf("%s: wrong user, got '%s', expected '%s'\n", 
+							tt, user, tt.user)
+				}
+
+				if group != tt.user {
+					t.Errorf("%s: wrong group, got '%s', expected '%s'\n", 
+							tt, user, tt.user)
 				}
 
 			} else {
@@ -338,11 +351,13 @@ func TestFiles(t *testing.T) {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
 				}
-				if contents != expectedContents[tt.path] {
-					t.Errorf("%s: exp = '%s', act = '%s'\n", 
-							expectedContents[tt.path], contents)
+				f, found := initialFiles[tt.path]
+				if !found {
+					t.Errorf("%s: not found in initialFiles\n", tt)
 				}
-
+				if contents != f.contents {
+					t.Errorf("%s: exp = '%s', act = '%s'\n", 	f.contents, contents)
+				}
 			} else {
 				if err == nil {
 					t.Errorf("%s: was allowed\n", tt)
@@ -353,7 +368,7 @@ func TestFiles(t *testing.T) {
 }
 
 
-var fileTests []fileTest = []fileTest {
+var optests []optest = []optest {
 
 	// Root directory
 	{"/", 0700, "read", "adm", true},
@@ -426,4 +441,5 @@ var fileTests []fileTest = []fileTest {
 
 	// Create a directory as adm
 	{"/books", os.ModeDir + 0755, "create", "adm", true},
+	{"/books", os.ModeDir + 0755, "create", "moe", true},
 }
