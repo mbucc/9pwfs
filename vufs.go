@@ -444,6 +444,7 @@ func (u *VuFs) Open(req *srv.Req) {
 
 func addUidGid(dir, file string, uid int, fid *srv.Fid) error {
 
+fmt.Println("addUidGid:", dir, " / ", file)
 	fid.Lock()
 	defer fid.Unlock()
 
