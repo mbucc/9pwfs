@@ -105,18 +105,18 @@ func dir2Npmode(d os.FileInfo) uint32 {
 }
 
 // Convert a string user id to a string and look up user Name.
-func atouid(id string, upool p.Users) (string, error) {
+func uid2name(id string, upool p.Users) (string, error) {
 
 	uid, err := strconv.Atoi(id)
 
 	if err != nil {
-		return "", fmt.Errorf("invalid uid %s", id)
+		return "", fmt.Errorf("invalid uid '%s'", id)
 	}
 
 	u := upool.Uid2User(uid)
 
 	if u == nil {
-		return "", fmt.Errorf("No user found for uid %d", uid)
+		return "", fmt.Errorf("no user with id %d", uid)
 	}
 
 	return u.Name(), nil
@@ -157,13 +157,13 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 
 		if columns[0] == fn {
 
-			user, err = atouid(columns[1], upool)
+			user, err = uid2name(columns[1], upool)
 
 			if err != nil {
 				return "", "", err
 			}
 
-			group, err = atouid(columns[2], upool)
+			group, err = uid2name(columns[2], upool)
 
 			if err != nil {
 				return "", "", err
@@ -442,6 +442,52 @@ func (u *VuFs) Open(req *srv.Req) {
 	req.RespondRopen(dir2Qid(st), 0)
 }
 
+func addUidGid(dir, file string, uid int, fid *srv.Fid) error {
+
+	fid.Lock()
+	defer fid.Unlock()
+
+	fn0 := dir + "/" + uidgidFile
+	//fn1 := fn0 + ".tmp"
+
+
+	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+
+	defer fp0.Close()
+
+	_, err = fp0.WriteString(fmt.Sprintf("%s:%d:%d\n", file, uid, uid))
+	if err != nil {
+		return err
+	}
+
+/*
+
+	fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err == nil {
+		defer fp0.Close()
+		_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
+
+	switch err {
+	case nil:
+
+	if err == nil && os.IsNotExist(err){
+		return err
+	}
+
+	if err != nil {
+
+
+
+
+*/
+
+	return nil
+}
+
+
 func (*VuFs) Create(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
@@ -451,7 +497,8 @@ func (*VuFs) Create(req *srv.Req) {
 		return
 	}
 
-	path := fid.path + "/" + tc.Name
+	parentPath := fid.path
+	path := parentPath + "/" + tc.Name
 	var e error = nil
 	var file *os.File = nil
 	switch {
@@ -461,13 +508,13 @@ func (*VuFs) Create(req *srv.Req) {
 			file, e = os.OpenFile(path, omode2uflags(tc.Mode), 0)
 		}
 
-	case tc.Perm&p.DMSYMLINK != 0:
-	case tc.Perm&p.DMLINK != 0:
-	case tc.Perm&p.DMNAMEDPIPE != 0:
-	case tc.Perm&p.DMDEVICE != 0:
-	case tc.Perm&p.DMSOCKET != 0:
-	case tc.Perm&p.DMSETUID != 0:
-	case tc.Perm&p.DMSETGID != 0:
+	case tc.Perm&p.DMSYMLINK != 0,
+			tc.Perm&p.DMLINK != 0,
+			tc.Perm&p.DMNAMEDPIPE != 0,
+			tc.Perm&p.DMDEVICE != 0,
+			tc.Perm&p.DMSOCKET != 0,
+			tc.Perm&p.DMSETUID != 0,
+			tc.Perm&p.DMSETGID != 0:
 		req.RespondError(srv.Ebaduse)
 		return
 
@@ -487,6 +534,16 @@ func (*VuFs) Create(req *srv.Req) {
 	fid.file = file
 	st, err = os.Stat(fid.path)
 	if err != nil {
+		file.Close()
+		fid.file = nil
+		req.RespondError(err)
+		return
+	}
+
+	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), req.Fid)
+	if err != nil {
+		file.Close()
+		fid.file = nil
 		req.RespondError(err)
 		return
 	}

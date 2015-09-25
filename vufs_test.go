@@ -296,7 +296,7 @@ func TestFiles(t *testing.T) {
 				} 
 				user, group, err := usergroup(conn, tt.path)
 				if err != nil {
-					t.Errorf("%s: couldn't stat file, got %v\n", tt, err)
+					t.Errorf("%s: couldn't stat file, got %s\n", tt, err)
 				} 
 		
 				if user != tt.user {
@@ -439,7 +439,7 @@ var optests []optest = []optest {
 	{"/larry-moe.txt", 0660, "write", "larry", true},
 	{"/larry-moe.txt", 0660, "write", "curly", false},
 
-	// Create a directory as adm
+	// Create files.
 	{"/books", os.ModeDir + 0755, "create", "adm", true},
 	{"/books", os.ModeDir + 0755, "create", "moe", true},
 }
