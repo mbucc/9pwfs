@@ -444,15 +444,13 @@ func (u *VuFs) Open(req *srv.Req) {
 
 func addUidGid(dir, file string, uid int, fid *srv.Fid) error {
 
-fmt.Println("addUidGid:", dir, " / ", file)
 	fid.Lock()
 	defer fid.Unlock()
 
 	fn0 := dir + "/" + uidgidFile
 	//fn1 := fn0 + ".tmp"
 
-
-	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY, 0600)
+	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return err
 	}
@@ -461,6 +459,7 @@ fmt.Println("addUidGid:", dir, " / ", file)
 
 	_, err = fp0.WriteString(fmt.Sprintf("%s:%d:%d\n", file, uid, uid))
 	if err != nil {
+		// BUG(mbucc) Should roll back any bytes writting to .uidgid on error.
 		return err
 	}
 
