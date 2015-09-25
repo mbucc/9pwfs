@@ -443,7 +443,12 @@ var optests []optest = []optest {
 	{"/larry-moe.txt", 0660, "write", "curly", false, false},
 
 	// Create files.
-	{"/books", os.ModeDir + 0755, "create", "adm", true,false},
 	{"/books", os.ModeDir + 0755, "create", "moe", true, false},
-	{"/books/larry", os.ModeDir + 0755, "create", "larry", true,  true},
+	{"/books/larry", os.ModeDir + 0700, "create", "larry", true,  true},
+/*
+	{"/books/larry/draft", 0600, "create", "larry", true,  true},
+	{"/books/larry/moe-draft", 0600, "create", "moe", false,  true},
+	{"/books", os.ModeDir + 0755, "create", "adm", true,false},
+*/
+
 }
