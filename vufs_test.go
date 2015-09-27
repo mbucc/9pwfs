@@ -24,11 +24,11 @@ const (
 
 // optest is a test of one file operation; for example, "read contents of / as user moe".
 type optest struct {
-	path    string
-	mode    os.FileMode
-	op      string
-	user    string
-	allowed bool
+	path     string
+	mode     os.FileMode
+	op       string
+	user     string
+	allowed  bool
 	keepLast bool
 }
 
@@ -37,27 +37,27 @@ func (ft optest) String() string {
 	if ft.allowed {
 		v = "can"
 	}
-	return fmt.Sprintf("%s %s %s '%s' %s",  ft.user, v, ft.op, ft.path, ft.mode)
+	return fmt.Sprintf("%s %s %s '%s' %s", ft.user, v, ft.op, ft.path, ft.mode)
 }
 
 // initialFile is a file on disk used for testing.
 type initialFile struct {
-	path string
-	contents	string
-	mode	os.FileMode
+	path     string
+	contents string
+	mode     os.FileMode
 }
 
 func (f initialFile) String() string {
-	return fmt.Sprintf("%s %s",  f.path, f.mode)
+	return fmt.Sprintf("%s %s", f.path, f.mode)
 }
 
-var initialFiles = map[string]initialFile {
-	"/": {"/",  ".uidgid, adm, larry-moe.txt, moe-moe.txt", 0775},
+var initialFiles = map[string]initialFile{
+	"/":     {"/", ".uidgid, adm, larry-moe.txt, moe-moe.txt", 0775},
 	"/adm/": {"/adm/", "", 0775},
-	"/adm/users": {"/adm/users", 
-			"1:adm:adm\n2:larry:larry\n3:moe:moe\n4:curly:curly\n", 
-			0600},
-	"/moe-moe.txt": {"/moe-moe.txt", "whatever",  0664},
+	"/adm/users": {"/adm/users",
+		"1:adm:adm\n2:larry:larry\n3:moe:moe\n4:curly:curly\n",
+		0600},
+	"/moe-moe.txt":   {"/moe-moe.txt", "whatever", 0664},
 	"/larry-moe.txt": {"/larry-moe.txt", "whatever", 0664},
 	"/" + uidgidFile: {"/" + uidgidFile, "moe-moe.txt:3:3\nlarry-moe.txt:2:3\n", 0600},
 }
@@ -73,7 +73,7 @@ var initialFiles = map[string]initialFile {
 //           +-- .uidgid          --rw-rw---- adm moe
 //           |
 //           +-- moe-moe.txt     --rw-rw-r-- moe moe
-//           |  
+//           |
 //           +-- larry-moe.txt     --rw-rw-r-- larry moe
 //
 //         Notes:
@@ -117,14 +117,13 @@ func initfs(rootdir string) {
 			continue
 		}
 		p := rootdir + f.path
-	
+
 		err = ioutil.WriteFile(p, []byte(f.contents), f.mode)
 		if err != nil {
 			panic(fmt.Sprintf("ioutil.WriteFile(%s, %s) failed: %v\n", p, f.mode, err))
 		}
 	}
 }
-
 
 func runserver(rootdir, port string) *client.Conn {
 
@@ -169,7 +168,7 @@ func readDir(fid *client.Fid) ([]byte, error) {
 		return nil, err
 	}
 
-	var buf  bytes.Buffer
+	var buf bytes.Buffer
 	for i, dd := range d {
 		if i > 0 {
 			buf.Write([]byte(", "))
@@ -196,7 +195,7 @@ func read(conn *client.Conn, username, filepath string) (string, error) {
 	defer fid.Close()
 
 	var buf []byte
-	if fid.Qid().Type & plan9.QTDIR != 0 {
+	if fid.Qid().Type&plan9.QTDIR != 0 {
 		buf, err = readDir(fid)
 	} else {
 		buf, err = ioutil.ReadAll(fid)
@@ -273,10 +272,7 @@ func usergroup(conn *client.Conn, filepath, user string) (string, string, error)
 	return dir.Uid, dir.Gid, nil
 }
 
-
-
 func TestFiles(t *testing.T) {
-
 
 	conn := runserver(rootdir, port)
 
@@ -296,19 +292,19 @@ func TestFiles(t *testing.T) {
 			if tt.allowed {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
-				} 
+				}
 				user, group, err := usergroup(conn, tt.path, tt.user)
 				if err != nil {
-					t.Errorf("%s: usergroup('%s'): %s\n", tt, tt.path,err)
+					t.Errorf("%s: usergroup('%s'): %s\n", tt, tt.path, err)
 				} else {
 					if user != tt.user {
-						t.Errorf("%s: wrong user, got '%s', expected '%s'\n", 
-								tt, user, tt.user)
+						t.Errorf("%s: wrong user, got '%s', expected '%s'\n",
+							tt, user, tt.user)
 					}
-	
+
 					if group != tt.user {
-						t.Errorf("%s: wrong group, got '%s', expected '%s'\n", 
-								tt, user, tt.user)
+						t.Errorf("%s: wrong group, got '%s', expected '%s'\n",
+							tt, user, tt.user)
 					}
 				}
 
@@ -328,16 +324,16 @@ func TestFiles(t *testing.T) {
 			if tt.allowed {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
-				} 
+				}
 
 				if n != 4 {
 					t.Errorf("%s: exp = 4, act = %d\n", tt, n)
-				} 
+				}
 
 				if newcontents != "whomever" {
 					t.Errorf("%s: exp = 'whomever', act = '%s'\n", tt, newcontents)
 				}
-			
+
 			} else {
 				if err == nil {
 					t.Errorf("%s: was allowed\n", tt)
@@ -359,7 +355,7 @@ func TestFiles(t *testing.T) {
 					t.Errorf("%s: not found in initialFiles\n", tt)
 				}
 				if contents != f.contents {
-					t.Errorf("%s: exp = '%s', act = '%s'\n", 	f.contents, contents)
+					t.Errorf("%s: exp = '%s', act = '%s'\n", f.contents, contents)
 				}
 			} else {
 				if err == nil {
@@ -370,8 +366,7 @@ func TestFiles(t *testing.T) {
 	}
 }
 
-
-var optests []optest = []optest {
+var optests []optest = []optest{
 
 	// Root directory
 	{"/", 0700, "read", "adm", true, false},
@@ -444,9 +439,9 @@ var optests []optest = []optest {
 
 	// Create files.
 	{"/books", os.ModeDir + 0755, "create", "moe", true, false},
-	{"/books/larry", os.ModeDir + 0700, "create", "larry", true,  true},
-	{"/books/larry/draft", 0600, "create", "larry", true,  true},
-	{"/books/larry/moe-draft", 0600, "create", "moe", false,  true},
-	{"/books", os.ModeDir + 0755, "create", "adm", true,false},
+	{"/books/larry", os.ModeDir + 0700, "create", "larry", true, true},
+	{"/books/larry/draft", 0600, "create", "larry", true, true},
+	{"/books/larry/moe-draft", 0600, "create", "moe", false, true},
 
+	{"/books", os.ModeDir + 0755, "create", "adm", true, false},
 }
