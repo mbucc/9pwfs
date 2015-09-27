@@ -5,38 +5,54 @@
 package vufs
 
 import (
-	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 )
 
 func TestUserFileLoaded(t *testing.T) {
 
-	Convey("Given a valid users file", t, func() {
+	users, _ := NewVusers("./test")
 
-		users, _ := NewVusers("./test")
+	if users.Uname2User("adm") == nil {
+		t.Error("Uname2User(\"adm\") was nil")
+	}
 
-		Convey("It should be parsed properly", func() {
+	if users.Uid2User(5) == nil {
+		t.Error("users.Uid2User(5) was nil")
+	} else {
+		if users.Uid2User(5).Name() != "glenda" {
+			t.Error("users.Uid2User(5).Name() != glenda")
+		}
+	}
 
-			So(users.Uname2User("adm"), ShouldNotBeNil)
+	if u := users.Uname2User("mark"); u == nil {
+		t.Error("users.Uname2User(\"mark\") was nil")
+	} else {
+		if u.Name() != "mark" {
+			t.Error("users.Uid2User(5).Name() != mark")
+		}
+		if len(u.Groups()) != 2 {
+			t.Error("user mark didn't have two groups")
+		}
+		if u.Groups()[0].Name() != "adm" {
+			t.Error("mark: first group wasn't adm")
+		}
+		if u.Groups()[1].Name() != "sys" {
+			t.Error("mark: second group wasn't sys")
+		}
+	}
 
-			So(users.Uid2User(5), ShouldNotBeNil)
-			So(users.Uid2User(5).Name(), ShouldEqual, "glenda")
+	if g := users.Gname2Group("sys"); g == nil {
+		t.Error("users.Gname2Group(\"sys\") was nil")
 
-			user := users.Uname2User("mark")
-			So(user, ShouldNotBeNil)
-			So(len(user.Groups()), ShouldEqual, 2)
-			So(user.Groups()[0].Name(), ShouldEqual, "adm")
-			So(user.Groups()[1].Name(), ShouldEqual, "sys")
-
-			group := users.Gname2Group("sys")
-			So(group, ShouldNotBeNil)
-
-			// A user is always in it's own group.
-			So(len(group.Members()), ShouldEqual, 2)
-			So(group.Members()[0].Name(), ShouldEqual, "adm")
-			So(group.Members()[1].Name(), ShouldEqual, "mark")
-
-		})
-	})
-
+	} else {
+		if len(g.Members()) != 2 {
+			t.Error("group sys: didn't have two members")
+		}
+		if g.Members()[0].Name() != "adm" {
+			t.Error("group sys: first member wasn't adm")
+		}
+		if g.Members()[1].Name() != "mark" {
+			t.Error("group sys: second member wasn't mark")
+		}
+	}
 }

@@ -19,7 +19,6 @@ import "fmt"
 const (
 	port               = ":5000"
 	messageSizeInBytes = 8192
-	rootdir            = "./tmpfs"
 )
 
 // optest is a test of one file operation; for example, "read contents of / as user moe".

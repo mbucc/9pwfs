@@ -5,55 +5,102 @@
 package vufs
 
 import (
-	. "github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestNoUidGid(t *testing.T) {
+var rootdir string
 
-	Convey("Given a user pool and a file", t, func() {
+func init() {
+	var err error
+	rootdir, err = ioutil.TempDir("", "vufs")
+	if err != nil {
+		panic(err)
+	}
+}
 
-		path := "t.txt"
+func TestAdmIsDefaultOwner(t *testing.T) {
 
-		root, err := ioutil.TempDir("", "vufs")
-		So(err, ShouldBeNil)
+	err := os.RemoveAll(rootdir)
+	if err != nil {
+		t.Errorf("RemoveAll(%s): %v\n", rootdir, err)
+	}
 
-		fn := filepath.Join(root, usersfn)
-		os.MkdirAll(filepath.Dir(fn), 0700)
-		err = ioutil.WriteFile(fn, []byte("1:adm:\n2:mark:\n3:nuts:\n"), 0644)
-		So(err, ShouldBeNil)
+	err = os.MkdirAll(filepath.Dir(rootdir), 0700)
+	if err != nil {
+		t.Errorf("MkdirAll(%s): %v\n", rootdir, err)
 
-		users, err := NewVusers(root)
-		So(err, ShouldBeNil)
+	}
+	defer os.RemoveAll(rootdir)
 
-		Convey("If no uidgid file found, then file owned by adm", func() {
+	users, err := NewVusers(rootdir)
+	if err != nil {
+		t.Errorf("NewVusers(%s): %v\n", rootdir, err)
 
-			os.Remove(uidgidFile)
+	}
 
-			user, group, err := path2UserGroup(path, users)
-			So(err, ShouldBeNil)
+	user, group, err := path2UserGroup(rootdir + "/t.txt", users)
+	if err != nil {
+		t.Errorf("path2UserGroup(t.txt): err = %v\n", err)
 
-			So(user, ShouldEqual, "adm")
-			So(group, ShouldEqual, "adm")
-		})
+	}
 
-		Convey("If uidgid file has entry for the file, we use that user and group", func() {
+	if user != "adm" {
+		t.Error("user != adm")
+	}
 
-			ioutil.WriteFile(uidgidFile, []byte(path+":2:3"), 0644)
-
-			user, group, err := path2UserGroup(path, users)
-			So(err, ShouldBeNil)
-
-			So(user, ShouldEqual, "mark")
-			So(group, ShouldEqual, "nuts")
-		})
-
-		Reset(func() {
-			defer os.RemoveAll(root)
-		})
-	})
+	if group != "adm" {
+		t.Error("group != adm")
+	}
 
 }
+
+func TestUidGidHasEntry(t *testing.T) {
+
+	err := os.RemoveAll(rootdir)
+	if err != nil {
+		t.Errorf("RemoveAll(%s): %v\n", rootdir, err)
+	}
+
+	d := rootdir + "/" + filepath.Dir(usersfn)
+	err = os.MkdirAll(d, 0755)
+	if err != nil {
+		t.Fatalf("MkdirAll(%s): %v\n", d, err)
+	}
+	defer os.RemoveAll(rootdir)
+
+
+	fn := rootdir + "/" + usersfn
+	err = ioutil.WriteFile(fn, []byte("1:adm:\n2:mark:\n3:nuts:\n"), 0644)
+	if err != nil {
+		t.Fatalf("WriteFile(%s): err = %v\n", fn, err)
+	}
+
+	err = ioutil.WriteFile(rootdir + "/" + uidgidFile, []byte("t.txt:2:3"), 0644)
+	if err != nil {
+		t.Fatalf("WriteFile(%s): err = %v\n", rootdir + "/" + uidgidFile, err)
+	}
+
+	users, err := NewVusers(rootdir)
+	if err != nil {
+		t.Errorf("NewVusers(%s): %v\n", rootdir, err)
+
+	}
+
+	user, group, err := path2UserGroup(rootdir + "/t.txt", users)
+	if err != nil {
+		t.Errorf("path2UserGroup(%s): err = %v\n", rootdir + "/t.txt", err)
+
+	}
+
+	if user != "mark" {
+		t.Errorf("user: '%s' != 'mark'\n", user)
+	}
+
+	if group != "nuts" {
+		t.Errorf("group: '%s' != 'nuts'\n", group)
+	}
+}
+
