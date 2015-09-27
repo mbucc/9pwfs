@@ -24,11 +24,11 @@ const (
 
 // optest is a test of one file operation; for example, "read contents of / as user moe".
 type optest struct {
-	allowed  bool
-	user     string
-	op       string
-	mode     os.FileMode
-	path     string
+	allowed   bool
+	user      string
+	op        string
+	mode      os.FileMode
+	path      string
 	keepState bool
 }
 
@@ -254,6 +254,25 @@ func create(conn *client.Conn, username, filepath string, mode os.FileMode) erro
 	return nil
 }
 
+// Delete file or directory
+func delete(conn *client.Conn, username, filepath string) error {
+
+	fsys, err := conn.Attach(nil, username, "/")
+
+	if err != nil {
+		return err
+	}
+
+	err = fsys.Remove(filepath)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // Return owner and group of given file.
 func usergroup(conn *client.Conn, filepath, user string) (string, string, error) {
 
@@ -286,6 +305,26 @@ func TestFiles(t *testing.T) {
 
 		default:
 			t.Errorf("Unsupported operation %s in optest = %s\n", tt.op, tt)
+
+		case "delete":
+			err := delete(conn, tt.user, tt.path)
+			if tt.allowed {
+				if err != nil {
+					t.Errorf("%s: %v\n", tt, err)
+				}
+				fp, err := os.Open(rootdir + "/" + tt.path)
+				if err == nil {
+					fp.Close()
+					t.Errorf("%s: delete failed\n", tt)
+				} else if !os.IsNotExist(err) {
+					t.Errorf("%s: after delete, err != IsNotExist: %v\n", tt, err)
+				}
+
+			} else {
+				if err == nil {
+					t.Errorf("%s: was allowed\n", tt)
+				}
+			}
 
 		case "create":
 			err := create(conn, tt.user, tt.path, tt.mode)
@@ -444,4 +483,12 @@ var optests []optest = []optest{
 	{false, "moe", "create", 0600, "/books/larry/moe-draft", true},
 
 	{true, "adm", "create", os.ModeDir + 0755, "/books", false},
+
+	// Delete files
+	{true, "moe", "create", os.ModeDir + 0755, "/books", false},
+	{true, "larry", "create", os.ModeDir + 0700, "/books/larry", true},
+	{true, "larry", "create", 0600, "/books/larry/draft", true},
+	{false, "moe", "delete", 0600, "/books/larry/draft", true},
+	{false, "adm", "delete", 0600, "/books/larry/draft", true},
+	{true, "larry", "delete", 0600, "/books/larry/draft", true},
 }
