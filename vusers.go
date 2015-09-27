@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	usersfn = "adm/users"
+	usersFile = "adm/users"
 )
 
 var (
@@ -144,7 +144,7 @@ func readUserFile(userfile string) ([]byte, error) {
 
 func NewVusers(root string) (*vUsers, error) {
 
-	userfn := filepath.Join(root, usersfn)
+	userfn := filepath.Join(root, usersFile)
 
 	data, err := readUserFile(userfn)
 	if err != nil {

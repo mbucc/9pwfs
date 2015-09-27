@@ -64,7 +64,7 @@ func TestUidGidHasEntry(t *testing.T) {
 		t.Errorf("RemoveAll(%s): %v\n", rootdir, err)
 	}
 
-	d := rootdir + "/" + filepath.Dir(usersfn)
+	d := rootdir + "/" + filepath.Dir(usersFile)
 	err = os.MkdirAll(d, 0755)
 	if err != nil {
 		t.Fatalf("MkdirAll(%s): %v\n", d, err)
@@ -72,7 +72,7 @@ func TestUidGidHasEntry(t *testing.T) {
 	defer os.RemoveAll(rootdir)
 
 
-	fn := rootdir + "/" + usersfn
+	fn := rootdir + "/" + usersFile
 	err = ioutil.WriteFile(fn, []byte("1:adm:\n2:mark:\n3:nuts:\n"), 0644)
 	if err != nil {
 		t.Fatalf("WriteFile(%s): err = %v\n", fn, err)
