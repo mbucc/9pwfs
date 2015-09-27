@@ -24,12 +24,12 @@ const (
 
 // optest is a test of one file operation; for example, "read contents of / as user moe".
 type optest struct {
-	path     string
-	mode     os.FileMode
-	op       string
-	user     string
 	allowed  bool
-	keepLast bool
+	user     string
+	op       string
+	mode     os.FileMode
+	path     string
+	keepState bool
 }
 
 func (ft optest) String() string {
@@ -278,7 +278,7 @@ func TestFiles(t *testing.T) {
 
 	for _, tt := range optests {
 
-		if !tt.keepLast {
+		if !tt.keepState {
 			initfs(rootdir)
 		}
 
@@ -369,79 +369,79 @@ func TestFiles(t *testing.T) {
 var optests []optest = []optest{
 
 	// Root directory
-	{"/", 0700, "read", "adm", true, false},
-	{"/", 0700, "read", "moe", false, false},
-	{"/", 0700, "read", "curly", false, false},
+	{true, "adm", "read", 0700, "/", false},
+	{false, "moe", "read", 0700, "/", false},
+	{false, "curly", "read", 0700, "/", false},
 
-	{"/", 0750, "read", "adm", true, false},
-	{"/", 0750, "read", "moe", false, false},
-	{"/", 0750, "read", "curly", false, false},
+	{true, "adm", "read", 0750, "/", false},
+	{false, "moe", "read", 0750, "/", false},
+	{false, "curly", "read", 0750, "/", false},
 
-	{"/", 0755, "read", "adm", true, false},
-	{"/", 0755, "read", "moe", true, false},
-	{"/", 0755, "read", "curly", true, false},
+	{true, "adm", "read", 0755, "/", false},
+	{true, "moe", "read", 0755, "/", false},
+	{true, "curly", "read", 0755, "/", false},
 
 	// Read file with same user and group (moe)
-	{"/moe-moe.txt", 0600, "read", "adm", false, false},
-	{"/moe-moe.txt", 0600, "read", "moe", true, false},
-	{"/moe-moe.txt", 0600, "read", "curly", false, false},
+	{false, "adm", "read", 0600, "/moe-moe.txt", false},
+	{true, "moe", "read", 0600, "/moe-moe.txt", false},
+	{false, "curly", "read", 0600, "/moe-moe.txt", false},
 
-	{"/moe-moe.txt", 0440, "read", "adm", false, false},
-	{"/moe-moe.txt", 0440, "read", "moe", true, false},
-	{"/moe-moe.txt", 0440, "read", "curly", false, false},
+	{false, "adm", "read", 0440, "/moe-moe.txt", false},
+	{true, "moe", "read", 0440, "/moe-moe.txt", false},
+	{false, "curly", "read", 0440, "/moe-moe.txt", false},
 
-	{"/moe-moe.txt", 0444, "read", "adm", true, false},
-	{"/moe-moe.txt", 0444, "read", "moe", true, false},
-	{"/moe-moe.txt", 0444, "read", "curly", true, false},
+	{true, "adm", "read", 0444, "/moe-moe.txt", false},
+	{true, "moe", "read", 0444, "/moe-moe.txt", false},
+	{true, "curly", "read", 0444, "/moe-moe.txt", false},
 
 	// Read file with different user (larry) and group (moe)
-	{"/larry-moe.txt", 0600, "read", "adm", false, false},
-	{"/larry-moe.txt", 0600, "read", "moe", false, false},
-	{"/larry-moe.txt", 0600, "read", "larry", true, false},
-	{"/larry-moe.txt", 0600, "read", "curly", false, false},
+	{false, "adm", "read", 0600, "/larry-moe.txt", false},
+	{false, "moe", "read", 0600, "/larry-moe.txt", false},
+	{true, "larry", "read", 0600, "/larry-moe.txt", false},
+	{false, "curly", "read", 0600, "/larry-moe.txt", false},
 
-	{"/larry-moe.txt", 0440, "read", "adm", false, false},
-	{"/larry-moe.txt", 0440, "read", "moe", true, false},
-	{"/larry-moe.txt", 0440, "read", "larry", true, false},
-	{"/larry-moe.txt", 0440, "read", "curly", false, false},
+	{false, "adm", "read", 0440, "/larry-moe.txt", false},
+	{true, "moe", "read", 0440, "/larry-moe.txt", false},
+	{true, "larry", "read", 0440, "/larry-moe.txt", false},
+	{false, "curly", "read", 0440, "/larry-moe.txt", false},
 
-	{"/larry-moe.txt", 0444, "read", "adm", true, false},
-	{"/larry-moe.txt", 0444, "read", "moe", true, false},
-	{"/larry-moe.txt", 0444, "read", "larry", true, false},
-	{"/larry-moe.txt", 0444, "read", "curly", true, false},
+	{true, "adm", "read", 0444, "/larry-moe.txt", false},
+	{true, "moe", "read", 0444, "/larry-moe.txt", false},
+	{true, "larry", "read", 0444, "/larry-moe.txt", false},
+	{true, "curly", "read", 0444, "/larry-moe.txt", false},
 
 	// Write file with same user and group (moe)
-	{"/moe-moe.txt", 0400, "write", "moe", false, false},
-	{"/moe-moe.txt", 0440, "write", "moe", false, false},
-	{"/moe-moe.txt", 0444, "write", "moe", false, false},
-	{"/moe-moe.txt", 0200, "write", "moe", false, false},
-	{"/moe-moe.txt", 0000, "write", "moe", false, false},
+	{false, "moe", "write", 0400, "/moe-moe.txt", false},
+	{false, "moe", "write", 0440, "/moe-moe.txt", false},
+	{false, "moe", "write", 0444, "/moe-moe.txt", false},
+	{false, "moe", "write", 0200, "/moe-moe.txt", false},
+	{false, "moe", "write", 0000, "/moe-moe.txt", false},
 
-	{"/moe-moe.txt", 0600, "write", "moe", true, false},
-	{"/moe-moe.txt", 0600, "write", "adm", false, false},
-	{"/moe-moe.txt", 0600, "write", "curly", false, false},
+	{true, "moe", "write", 0600, "/moe-moe.txt", false},
+	{false, "adm", "write", 0600, "/moe-moe.txt", false},
+	{false, "curly", "write", 0600, "/moe-moe.txt", false},
 
-	{"/moe-moe.txt", 0660, "write", "adm", false, false},
-	{"/moe-moe.txt", 0660, "write", "curly", false, false},
-	{"/moe-moe.txt", 0666, "write", "adm", true, false},
-	{"/moe-moe.txt", 0666, "write", "curly", true, false},
+	{false, "adm", "write", 0660, "/moe-moe.txt", false},
+	{false, "curly", "write", 0660, "/moe-moe.txt", false},
+	{true, "adm", "write", 0666, "/moe-moe.txt", false},
+	{true, "curly", "write", 0666, "/moe-moe.txt", false},
 
 	// Write file with different user (larry) and group (moe)
-	{"/larry-moe.txt", 0600, "write", "adm", false, false},
-	{"/larry-moe.txt", 0600, "write", "moe", false, false},
-	{"/larry-moe.txt", 0600, "write", "larry", true, false},
-	{"/larry-moe.txt", 0600, "write", "curly", false, false},
+	{false, "adm", "write", 0600, "/larry-moe.txt", false},
+	{false, "moe", "write", 0600, "/larry-moe.txt", false},
+	{true, "larry", "write", 0600, "/larry-moe.txt", false},
+	{false, "curly", "write", 0600, "/larry-moe.txt", false},
 
-	{"/larry-moe.txt", 0660, "write", "adm", false, false},
-	{"/larry-moe.txt", 0660, "write", "moe", true, false},
-	{"/larry-moe.txt", 0660, "write", "larry", true, false},
-	{"/larry-moe.txt", 0660, "write", "curly", false, false},
+	{false, "adm", "write", 0660, "/larry-moe.txt", false},
+	{true, "moe", "write", 0660, "/larry-moe.txt", false},
+	{true, "larry", "write", 0660, "/larry-moe.txt", false},
+	{false, "curly", "write", 0660, "/larry-moe.txt", false},
 
 	// Create files.
-	{"/books", os.ModeDir + 0755, "create", "moe", true, false},
-	{"/books/larry", os.ModeDir + 0700, "create", "larry", true, true},
-	{"/books/larry/draft", 0600, "create", "larry", true, true},
-	{"/books/larry/moe-draft", 0600, "create", "moe", false, true},
+	{true, "moe", "create", os.ModeDir + 0755, "/books", false},
+	{true, "larry", "create", os.ModeDir + 0700, "/books/larry", true},
+	{true, "larry", "create", 0600, "/books/larry/draft", true},
+	{false, "moe", "create", 0600, "/books/larry/moe-draft", true},
 
-	{"/books", os.ModeDir + 0755, "create", "adm", true, false},
+	{true, "adm", "create", os.ModeDir + 0755, "/books", false},
 }
