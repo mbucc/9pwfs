@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
@@ -138,23 +139,25 @@ func runserver(rootdir, port string) *client.Conn {
 	fs.Start(fs)
 
 	go func() {
-		err = fs.StartNetListener("tcp", port)
-		if err != nil {
-			panic(err)
+		// Give last go routine time to stop listening.
+		for i := 0; i < 10; i++ {
+			if err = fs.StartNetListener("tcp", port); err != nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
 	// Make sure runserver is listening before returning.
 	var conn *client.Conn
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 15; i++ {
 		if conn, err = client.Dial("tcp", port); err == nil {
 			break
 		}
-
 	}
 
 	if err != nil {
-		panic("couldn't connect to runserver after 15 tries: " + err.Error())
+		panic("filesystem server didn't start" + err.Error())
 	}
 
 	return conn
@@ -408,6 +411,7 @@ var optests []optest = []optest{
 
 	// Root directory
 	{true, "adm", "read", 0700, "/", false},
+
 	{false, "moe", "read", 0700, "/", false},
 	{false, "curly", "read", 0700, "/", false},
 

@@ -13,8 +13,6 @@ import (
 
 func TestLock(t *testing.T) {
 
-	rootdir := "./tmpfs"
-
 	initfs(rootdir)
 	defer os.RemoveAll(rootdir)
 
