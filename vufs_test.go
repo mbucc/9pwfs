@@ -51,6 +51,53 @@ func (f initialFile) String() string {
 	return fmt.Sprintf("%s %s", f.path, f.mode)
 }
 
+
+
+// 0.05 milliseconds.
+func BenchmarkAttach(b *testing.B) {
+
+	conn := runserver(rootdir, port)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		conn.Attach(nil, "adm", "/")
+	}
+}
+
+// 0.18 milliseconds.
+func BenchmarkOpenClose(b *testing.B) {
+
+	conn := runserver(rootdir, port)
+	fsys, _ := conn.Attach(nil, "adm", "/")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		fid, _ := fsys.Open("/", plan9.OREAD)
+		fid.Close()
+	}
+}
+
+// 0.003 milliseconds (~60X faster than fsys).
+func BenchmarkOsOpenClose(b *testing.B) {
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		fid, _ := os.Open(".")
+		fid.Close()
+	}
+}
+
+// 0.06 milliseconds.
+func BenchmarkReadDir(b *testing.B) {
+
+	conn := runserver(rootdir, port)
+	fsys, _ := conn.Attach(nil, "adm", "/")
+	fid, _ := fsys.Open("/", plan9.OREAD)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		fid.Dirread()
+	}
+}
+
+
 var initialFiles = map[string]initialFile{
 	"/":     {"/", ".uidgid, adm, larry-moe.txt, moe-moe.txt", 0775},
 	"/adm/": {"/adm/", "", 0775},
