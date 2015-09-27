@@ -256,9 +256,9 @@ func create(conn *client.Conn, username, filepath string, mode os.FileMode) erro
 }
 
 // Return owner and group of given file.
-func usergroup(conn *client.Conn, filepath string) (string, string, error) {
+func usergroup(conn *client.Conn, filepath, user string) (string, string, error) {
 
-	fsys, err := conn.Attach(nil, "adm", "/")
+	fsys, err := conn.Attach(nil, user, "/")
 
 	if err != nil {
 		return "", "", err
@@ -297,19 +297,19 @@ func TestFiles(t *testing.T) {
 				if err != nil {
 					t.Errorf("%s: %v\n", tt, err)
 				} 
-				user, group, err := usergroup(conn, tt.path)
+				user, group, err := usergroup(conn, tt.path, tt.user)
 				if err != nil {
-					t.Errorf("%s: couldn't stat file, got %s\n", tt, err)
-				} 
-		
-				if user != tt.user {
-					t.Errorf("%s: wrong user, got '%s', expected '%s'\n", 
-							tt, user, tt.user)
-				}
-
-				if group != tt.user {
-					t.Errorf("%s: wrong group, got '%s', expected '%s'\n", 
-							tt, user, tt.user)
+					t.Errorf("%s: usergroup('%s'): %s\n", tt, tt.path,err)
+				} else {
+					if user != tt.user {
+						t.Errorf("%s: wrong user, got '%s', expected '%s'\n", 
+								tt, user, tt.user)
+					}
+	
+					if group != tt.user {
+						t.Errorf("%s: wrong group, got '%s', expected '%s'\n", 
+								tt, user, tt.user)
+					}
 				}
 
 			} else {
@@ -445,10 +445,8 @@ var optests []optest = []optest {
 	// Create files.
 	{"/books", os.ModeDir + 0755, "create", "moe", true, false},
 	{"/books/larry", os.ModeDir + 0700, "create", "larry", true,  true},
-/*
 	{"/books/larry/draft", 0600, "create", "larry", true,  true},
 	{"/books/larry/moe-draft", 0600, "create", "moe", false,  true},
 	{"/books", os.ModeDir + 0755, "create", "adm", true,false},
-*/
 
 }
