@@ -25,3 +25,5 @@ _testmain.go
 git.msg
 gitmsg
 .uidgid
+scratch
+tmpfs
