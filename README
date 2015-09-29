@@ -5,14 +5,19 @@ Built by modifying ufs.go in https://github.com/rminnich/go9p.
 STATUS: work-in-progress
 
 To install:
-  export GOPATH=~mbucc/go
+  export GOPATH=$HOME/go
+  cd $GOPATH
   go get -a github.com/mbucc/vufs
   go get -a github.com/mbucc/vufs/vufs
   go install -a github.com/mbucc/vufs/vufs
 
 To run:
-  ~/go/bin/vufs -root $(pwd) -debug 1
+  mkdir adm
+  echo 1:$(id -un): > adm/users
+  $GOPATH/bin/vufs -root $(pwd) -debug 1
 
 Then, in another terminal:
   9p -n -a localhost:5640 ls
 
+(The last command assumes you have installed Plan 9 from User Space,
+from https://github.com/9fans/plan9port.)
