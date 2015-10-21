@@ -541,7 +541,7 @@ func (*VuFs) Create(req *srv.Req) {
 		return
 	}
 
-	// BUG(mbucc): Redesign data structures and remove this panic.
+	// BUG(mbucc): Redesign data structures so I can remove this panic.
 	_, dirgid, err := path2UserGroup(parentPath, req.Conn.Srv.Upool)
 	if err != nil {
 		panic(fmt.Sprintf("no uid/gid found for parent directory '%s'", parentPath))

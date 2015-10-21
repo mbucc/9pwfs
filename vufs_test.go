@@ -26,7 +26,7 @@ const (
 type optest struct {
 	allowed   bool
 	user      string
-	group   string
+	group     string
 	op        string
 	mode      os.FileMode
 	path      string
@@ -51,8 +51,6 @@ type initialFile struct {
 func (f initialFile) String() string {
 	return fmt.Sprintf("%s %s", f.path, f.mode)
 }
-
-
 
 // 0.05 milliseconds.
 func BenchmarkAttach(b *testing.B) {
@@ -98,7 +96,6 @@ func BenchmarkReadDir(b *testing.B) {
 	}
 }
 
-
 var initialFiles = map[string]initialFile{
 	"/":     {"/", ".uidgid, adm, larry-moe.txt, moe-moe.txt", 0775},
 	"/adm/": {"/adm/", "", 0775},
@@ -112,7 +109,7 @@ var initialFiles = map[string]initialFile{
 
 // Initialize file system as:
 //
-//          /
+//          /            --rwxrwxr-x adm adm
 //           |
 //           +-- adm/            --rwx------ adm adm
 //           |       |
@@ -147,31 +144,30 @@ func initfs(rootdir string) {
 		panic(msg)
 	}
 
-	isdir := func(s string) bool {return s[len(s)-1] == '/'}
+	isdir := func(s string) bool { return s[len(s)-1] == '/' }
 
 	// Create initial filesystem.  Directories first
 	for path, f := range initialFiles {
-		if ! isdir(path) {
-			continue
-		}
-		p := rootdir + f.path
-		err = os.MkdirAll(p, f.mode)
-		if err != nil {
-			panic(fmt.Sprintf("os.MkdirAll(%s, %s) failed: %v\n", p, f.mode, err))
+		if isdir(path) {
+			p := rootdir + f.path
+			err = os.MkdirAll(p, f.mode)
+			if err != nil {
+				panic(fmt.Sprintf("os.MkdirAll(%s, %s) failed: %v\n", p, f.mode, err))
+			}
 		}
 	}
 
 	// Now that directories are created, do files.
 	for path, f := range initialFiles {
-		if path[len(path)-1] == '/' {
-			continue
-		}
-		p := rootdir + f.path
+		if !isdir(path) {
+			p := rootdir + f.path
 
-		err = ioutil.WriteFile(p, []byte(f.contents), f.mode)
-		if err != nil {
-			panic(fmt.Sprintf("ioutil.WriteFile(%s, %s) failed: %v\n", p, f.mode, err))
+			err = ioutil.WriteFile(p, []byte(f.contents), f.mode)
+			if err != nil {
+				panic(fmt.Sprintf("ioutil.WriteFile(%s, %s) failed: %v\n", p, f.mode, err))
+			}
 		}
+
 	}
 }
 
@@ -530,17 +526,17 @@ var optests []optest = []optest{
 	{false, "curly", "", "write", 0660, "/larry-moe.txt", false},
 
 	// Create files.
-	{true, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
-	{true, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
-	{true, "larry", "adm", "create", 0600, "/books/larry/draft", true},
+	{false, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
+	{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+	{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
 	{false, "moe", "adm", "create", 0600, "/books/larry/moe-draft", true},
 
 	{true, "adm", "adm", "create", os.ModeDir + 0755, "/books", false},
 
 	// Delete files
-	{true, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
-	{true, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
-	{true, "larry", "adm", "create", 0600, "/books/larry/draft", true},
+	{false, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
+	{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+	{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
 	{false, "moe", "", "delete", 0600, "/books/larry/draft", true},
 	{false, "adm", "", "delete", 0600, "/books/larry/draft", true},
 	{true, "larry", "", "delete", 0600, "/books/larry/draft", true},
