@@ -21,3 +21,107 @@ Then, in another terminal:
 
 (The last command assumes you have installed Plan 9 from User Space,
 from https://github.com/9fans/plan9port.)
+
+
+TODO
+
+[] Support non-zero offset when reading directory
+[] Define Tremove behavior when qid opened as multiple fids: unix-ish or plan9-ish?
+
+
+Notes on Section 5 of Plan 9 Manual
+
+0intro
+  * The tag connects the async response (R-message) to the request (T-message).
+  * Every outstanding T-message must have a different tag.
+  * A fid is a handle used by the client to identify a file on the server.
+  * The fid-space is scoped to the connection.
+  * A connection can be shared by multiple clients.
+    (In this case, no two clients should use the same fid.)
+  * The server can respond to later message before earlier ones.
+  * A qid uniquely identifies the file.
+  * A client may have multiple fids reference the same qid.
+  * Owner and group id's are string (e.g, "bob").
+  * File mode bits:
+	QTDIR	DMDIR	directory
+	QTAPPEND	DMAPPEND	file is append-only (offset is ignored in writes)
+	QTEXCL	DMEXCL	only one client can have file open at a time
+	QTAUTH	DMAUTH	authentication file established by auth messages
+	QTTMP	DMTMP	skip when doing backups
+
+attach
+  [] If fid is already used (on this connection), return an error.
+  [] If server does not require authentication, auth returns an error.
+  * If it does, auth returns aqid which is used to communicate credentials.
+
+clunk
+  [] If opened with ORCLOSE (see open below), file is removed from server.
+  * After a clunk, the fid can be reused on the connection.
+
+flush
+  [] To interrupt a long read (for example), client can flush that previous request.
+  * The Tflush includes two tags: oldtag (the msg to flush) and tag (the flush msg itself)
+  * Once Rflush is received the oldtag is available for re-use.
+  * If the oldtag Rmsg comes back before the Rflush, the trx was not flushed.
+  * ... and more details.
+
+open
+  [] OTRUNC truncates file and requires write permission.
+  [] if OTRUNC with QTAPPEND, write perm still required but file is not truncated.
+  [] ORCLOSE requires permission to modify file's parent directory.
+  [] If file is QTEXCL only one client can have one fid open at a time
+  * The file permissions are not rechecked after it is opened; e.g.,
+    if you can read it at open time, you can read it until you clunk it.
+  * It is an error if the fid is already in use.
+  * iounit field (if non-zero), is the max bytes guaranteed be transferred atomically
+  [] (stat): server's may implement a timeout on QTEXCL (at least a minute).
+  [] (stat): on QTEXCL timeout, initial fid is denied further I/O
+
+create
+  [] Creating a file takes owner of request and group of directory.
+  [] Creating a file requires write perm on directory.
+  [] Creating a file clamps file permissions to the directory's.
+  [] A newly created file is opened.
+  [] It is an error to create a file with the name . or ..
+  [] It is an error if the fid is already in use.
+
+read
+  [] fid must be opened for reading.
+  [] if offset > file size, a count of zero bytes read is returned
+  [] the offset sent must point to the beginning of a directory entry;
+    for example, zero.  or zero plus bytes returned from first read.
+
+write
+  [] fid must be opened for writing
+  [] directories may not be written
+  [] for QTAPPEND files, offset is ignored
+
+remove
+  [] remove the file represented by fid and clunk fid
+  [] requres write perm in parent directory
+  [] plan9 removes file immediately, even if open by other clients.
+  * unix typically let's other fids remain usable.
+
+stat
+  [] stat requires no special permissions.
+  [] last change in content does not include changes by wstat messages
+  [] file: mtime = most recent create, open with trunc, or write
+  [] dir: mtime = most recent remove, create, or wstat of file in dir.
+  [] file: atime = max(most recent read, mtime)
+  [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
+  [] muid = user that most recently changed the mtime
+  [] directories, by convention, have a length of zero
+  * stat response is limited to 65535 bytes
+
+wstat
+  [] name can be changed by anyone with write permission in directory
+  [] error if newname = name of other file in directory
+  [] mode and mtime can be changed by the file owner or group leader
+  [] directory bit cannot be changed
+  [] server may chose to reject length changes on files
+  [] changing length on an array is an error
+  [] gid can be changed by owner if member of new group
+  [] gid can be changed by group leader if leader of the new group
+  [] no other data can be changed by wstat
+  [] in particular, it is an error to change the owner of a file
+  [] message is all or none; if request succeeds, all changes were made.
