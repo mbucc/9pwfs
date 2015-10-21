@@ -528,17 +528,17 @@ var optests []optest = []optest{
 	{false, "curly", "", "write", 0660, "/larry-moe.txt", false},
 
 	// Create files.
-	{true, "moe", "moe", "create", os.ModeDir + 0755, "/books", false},
-	{true, "larry", "larry", "create", os.ModeDir + 0700, "/books/larry", true},
-	{true, "larry", "larry", "create", 0600, "/books/larry/draft", true},
-	{false, "moe", "moe", "create", 0600, "/books/larry/moe-draft", true},
+	{true, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
+	{true, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+	{true, "larry", "adm", "create", 0600, "/books/larry/draft", true},
+	{false, "moe", "adm", "create", 0600, "/books/larry/moe-draft", true},
 
 	{true, "adm", "adm", "create", os.ModeDir + 0755, "/books", false},
 
 	// Delete files
-	{true, "moe", "moe", "create", os.ModeDir + 0755, "/books", false},
-	{true, "larry", "larry", "create", os.ModeDir + 0700, "/books/larry", true},
-	{true, "larry", "larry", "create", 0600, "/books/larry/draft", true},
+	{true, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
+	{true, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+	{true, "larry", "adm", "create", 0600, "/books/larry/draft", true},
 	{false, "moe", "", "delete", 0600, "/books/larry/draft", true},
 	{false, "adm", "", "delete", 0600, "/books/larry/draft", true},
 	{true, "larry", "", "delete", 0600, "/books/larry/draft", true},
