@@ -147,9 +147,11 @@ func initfs(rootdir string) {
 		panic(msg)
 	}
 
+	isdir := func(s string) bool {return s[len(s)-1] == '/'}
+
 	// Create initial filesystem.  Directories first
 	for path, f := range initialFiles {
-		if path[len(path)-1] != '/' {
+		if ! isdir(path) {
 			continue
 		}
 		p := rootdir + f.path

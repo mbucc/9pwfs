@@ -78,7 +78,7 @@ open
   [] (stat): on QTEXCL timeout, initial fid is denied further I/O
 
 create
-  [] Creating a file takes owner of request and group of directory.
+  [x] Creating a file takes owner of request and group of directory.
   [] Creating a file requires write perm on directory.
   [] Creating a file clamps file permissions to the directory's.
   [] A newly created file is opened.
