@@ -442,7 +442,7 @@ func (u *VuFs) Open(req *srv.Req) {
 	req.RespondRopen(dir2Qid(st), 0)
 }
 
-func addUidGid(dir, file string, uid int, fid *srv.Fid) error {
+func addUidGid(dir, file string, uid, gid int, fid *srv.Fid) error {
 
 	fid.Lock()
 	defer fid.Unlock()
@@ -457,9 +457,9 @@ func addUidGid(dir, file string, uid int, fid *srv.Fid) error {
 
 	defer fp0.Close()
 
-	_, err = fp0.WriteString(fmt.Sprintf("%s:%d:%d\n", file, uid, uid))
+	_, err = fp0.WriteString(fmt.Sprintf("%s:%d:%d\n", file, uid, gid))
 	if err != nil {
-		// BUG(mbucc) Should roll back any bytes writting to .uidgid on error.
+		// BUG(mbucc) Roll back  bytes written to .uidgid on error.
 		return err
 	}
 
@@ -496,6 +496,7 @@ func (*VuFs) Create(req *srv.Req) {
 		req.RespondError(toError(err))
 		return
 	}
+
 
 	parentPath := fid.path
 	path := parentPath + "/" + tc.Name
@@ -540,7 +541,17 @@ func (*VuFs) Create(req *srv.Req) {
 		return
 	}
 
-	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), req.Fid)
+	// BUG(mbucc): Redesign data structures and remove this panic.
+	_, dirgid, err := path2UserGroup(parentPath, req.Conn.Srv.Upool)
+	if err != nil {
+		panic(fmt.Sprintf("no uid/gid found for parent directory '%s'", parentPath))
+	}
+	gu := req.Conn.Srv.Upool.Uname2User(dirgid)
+	if gu == nil {
+		panic(fmt.Sprintf("no user for parent directory gid %d", dirgid))
+	}
+	
+	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), gu.Id(), req.Fid)
 	if err != nil {
 		file.Close()
 		fid.file = nil
