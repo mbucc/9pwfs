@@ -491,14 +491,25 @@ func addUidGid(dir, file string, uid, gid int, fid *srv.Fid) error {
 func (*VuFs) Create(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
-	st, err := os.Stat(fid.path)
+
+	parentPath := fid.path
+
+	// User must be able to write to parent directory.
+	st, err := os.Stat(parentPath)
 	if err != nil {
 		req.RespondError(toError(err))
 		return
 	}
+	f, err := dir2Dir(parentPath, st, req.Conn.Srv.Upool)
+	if err != nil {
+		req.RespondError(toError(err))
+		return
+	}
+	if !CheckPerm(f, req.Fid.User, p.DMWRITE) {
+		req.RespondError(srv.Eperm)
+		return
+	}
 
-
-	parentPath := fid.path
 	path := parentPath + "/" + tc.Name
 	var e error = nil
 	var file *os.File = nil

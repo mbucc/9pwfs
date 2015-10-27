@@ -7,6 +7,7 @@ package vufs
 import (
 	"bytes"
 	"io/ioutil"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -26,7 +27,6 @@ const (
 type optest struct {
 	allowed   bool
 	user      string
-	group     string
 	op        string
 	mode      os.FileMode
 	path      string
@@ -171,7 +171,13 @@ func initfs(rootdir string) {
 	}
 }
 
+
+var testserver net.Listener
+var started bool
+
 func runserver(rootdir, port string) *client.Conn {
+
+	initfs(rootdir)
 
 	var err error
 	fs := New(rootdir)
@@ -184,10 +190,28 @@ func runserver(rootdir, port string) *client.Conn {
 
 	fs.Start(fs)
 
+	if started {
+		fmt.Println("stopping testserver")
+		err = testserver.Close()
+		if err != nil {
+			panic(err)
+		}
+		time.Sleep(250 * time.Millisecond)
+	} else {
+		fmt.Println("testserver not running")
+	}
+
+	fmt.Println("starting testserver")
+	testserver, err = net.Listen("tcp", port)
+	if err != nil {
+		panic("can't start server: " + err.Error())
+	}
+	started = true
+
 	go func() {
 		// Give last go routine time to stop listening.
 		for i := 0; i < 10; i++ {
-			if err = fs.StartNetListener("tcp", port); err != nil {
+			if err = fs.StartListener(testserver); err != nil {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -339,6 +363,39 @@ func usergroup(conn *client.Conn, filepath, user string) (string, string, error)
 	return dir.Uid, dir.Gid, nil
 }
 
+func TestCreate(t *testing.T) {
+
+	conn := runserver(rootdir, port)
+
+	// User "moe" does not have write permission in parent directory.
+	err := create(conn, "moe", "/books", os.ModeDir+0755)
+	if err == nil {
+		t.Error("moe could create directory.")
+	}
+
+	err = create(conn, "adm", "/books", os.ModeDir+0755)
+	if err != nil {
+		t.Errorf("adm could not create directory")
+	}
+
+	/*
+		// User should be user, group should come from directory.
+		user, group, err := usergroup(conn, "/books", "adm")
+		if err != nil {
+			t.Errorf("%s: usergroup('%s'): %s\n", tt, tt.path, err)
+		}
+		if user != tt.user {
+			t.Errorf("%s: wrong user, got '%s', expected '%s'\n",
+				tt, user, tt.user)
+		}
+		if group != tt.group {
+			t.Errorf("%s: wrong group, got '%s', expected '%s'\n",
+				tt, user, tt.user)
+		}
+	*/
+
+}
+
 func TestFiles(t *testing.T) {
 
 	conn := runserver(rootdir, port)
@@ -374,32 +431,7 @@ func TestFiles(t *testing.T) {
 				}
 			}
 
-		case "create":
-			err := create(conn, tt.user, tt.path, tt.mode)
-			if tt.allowed {
-				if err != nil {
-					t.Errorf("%s: %v\n", tt, err)
-				}
-				user, group, err := usergroup(conn, tt.path, tt.user)
-				if err != nil {
-					t.Errorf("%s: usergroup('%s'): %s\n", tt, tt.path, err)
-				} else {
-					if user != tt.user {
-						t.Errorf("%s: wrong user, got '%s', expected '%s'\n",
-							tt, user, tt.user)
-					}
-
-					if group != tt.group {
-						t.Errorf("%s: wrong group, got '%s', expected '%s'\n",
-							tt, user, tt.user)
-					}
-				}
-
-			} else {
-				if err == nil {
-					t.Errorf("%s: was allowed\n", tt)
-				}
-			}
+			// User should be user, group should come from directory.
 
 		case "write":
 			err := os.Chmod(rootdir+tt.path, tt.mode)
@@ -442,7 +474,7 @@ func TestFiles(t *testing.T) {
 					t.Errorf("%s: not found in initialFiles\n", tt)
 				}
 				if contents != f.contents {
-					t.Errorf("%s: exp = '%s', act = '%s'\n", f.contents, contents)
+					t.Errorf("%s: exp = '%s', act = '%s'\n", tt, f.contents, contents)
 				}
 			} else {
 				if err == nil {
@@ -456,88 +488,90 @@ func TestFiles(t *testing.T) {
 var optests []optest = []optest{
 
 	// Root directory
-	{true, "adm", "", "read", 0700, "/", false},
+	{true, "adm", "read", 0700, "/", false},
 
-	{false, "moe", "", "read", 0700, "/", false},
-	{false, "curly", "", "read", 0700, "/", false},
+	{false, "moe", "read", 0700, "/", false},
+	{false, "curly", "read", 0700, "/", false},
 
-	{true, "adm", "", "read", 0750, "/", false},
-	{false, "moe", "", "read", 0750, "/", false},
-	{false, "curly", "", "read", 0750, "/", false},
+	{true, "adm", "read", 0750, "/", false},
+	{false, "moe", "read", 0750, "/", false},
+	{false, "curly", "read", 0750, "/", false},
 
-	{true, "adm", "", "read", 0755, "/", false},
-	{true, "moe", "", "read", 0755, "/", false},
-	{true, "curly", "", "read", 0755, "/", false},
+	{true, "adm", "read", 0755, "/", false},
+	{true, "moe", "read", 0755, "/", false},
+	{true, "curly", "read", 0755, "/", false},
 
 	// Read file with same user and group (moe)
-	{false, "adm", "", "read", 0600, "/moe-moe.txt", false},
-	{true, "moe", "", "read", 0600, "/moe-moe.txt", false},
-	{false, "curly", "", "read", 0600, "/moe-moe.txt", false},
+	{false, "adm", "read", 0600, "/moe-moe.txt", false},
+	{true, "moe", "read", 0600, "/moe-moe.txt", false},
+	{false, "curly", "read", 0600, "/moe-moe.txt", false},
 
-	{false, "adm", "", "read", 0440, "/moe-moe.txt", false},
-	{true, "moe", "", "read", 0440, "/moe-moe.txt", false},
-	{false, "curly", "", "read", 0440, "/moe-moe.txt", false},
+	{false, "adm", "read", 0440, "/moe-moe.txt", false},
+	{true, "moe", "read", 0440, "/moe-moe.txt", false},
+	{false, "curly", "read", 0440, "/moe-moe.txt", false},
 
-	{true, "adm", "", "read", 0444, "/moe-moe.txt", false},
-	{true, "moe", "", "read", 0444, "/moe-moe.txt", false},
-	{true, "curly", "", "read", 0444, "/moe-moe.txt", false},
+	{true, "adm", "read", 0444, "/moe-moe.txt", false},
+	{true, "moe", "read", 0444, "/moe-moe.txt", false},
+	{true, "curly", "read", 0444, "/moe-moe.txt", false},
 
 	// Read file with different user (larry) and group (moe)
-	{false, "adm", "", "read", 0600, "/larry-moe.txt", false},
-	{false, "moe", "", "read", 0600, "/larry-moe.txt", false},
-	{true, "larry", "", "read", 0600, "/larry-moe.txt", false},
-	{false, "curly", "", "read", 0600, "/larry-moe.txt", false},
+	{false, "adm", "read", 0600, "/larry-moe.txt", false},
+	{false, "moe", "read", 0600, "/larry-moe.txt", false},
+	{true, "larry", "read", 0600, "/larry-moe.txt", false},
+	{false, "curly", "read", 0600, "/larry-moe.txt", false},
 
-	{false, "adm", "", "read", 0440, "/larry-moe.txt", false},
-	{true, "moe", "", "read", 0440, "/larry-moe.txt", false},
-	{true, "larry", "", "read", 0440, "/larry-moe.txt", false},
-	{false, "curly", "", "read", 0440, "/larry-moe.txt", false},
+	{false, "adm", "read", 0440, "/larry-moe.txt", false},
+	{true, "moe", "read", 0440, "/larry-moe.txt", false},
+	{true, "larry", "read", 0440, "/larry-moe.txt", false},
+	{false, "curly", "read", 0440, "/larry-moe.txt", false},
 
-	{true, "adm", "", "read", 0444, "/larry-moe.txt", false},
-	{true, "moe", "", "read", 0444, "/larry-moe.txt", false},
-	{true, "larry", "", "read", 0444, "/larry-moe.txt", false},
-	{true, "curly", "", "read", 0444, "/larry-moe.txt", false},
+	{true, "adm", "read", 0444, "/larry-moe.txt", false},
+	{true, "moe", "read", 0444, "/larry-moe.txt", false},
+	{true, "larry", "read", 0444, "/larry-moe.txt", false},
+	{true, "curly", "read", 0444, "/larry-moe.txt", false},
 
 	// Write file with same user and group (moe)
-	{false, "moe", "", "write", 0400, "/moe-moe.txt", false},
-	{false, "moe", "", "write", 0440, "/moe-moe.txt", false},
-	{false, "moe", "", "write", 0444, "/moe-moe.txt", false},
-	{false, "moe", "", "write", 0200, "/moe-moe.txt", false},
-	{false, "moe", "", "write", 0000, "/moe-moe.txt", false},
+	{false, "moe", "write", 0400, "/moe-moe.txt", false},
+	{false, "moe", "write", 0440, "/moe-moe.txt", false},
+	{false, "moe", "write", 0444, "/moe-moe.txt", false},
+	{false, "moe", "write", 0200, "/moe-moe.txt", false},
+	{false, "moe", "write", 0000, "/moe-moe.txt", false},
 
-	{true, "moe", "", "write", 0600, "/moe-moe.txt", false},
-	{false, "adm", "", "write", 0600, "/moe-moe.txt", false},
-	{false, "curly", "", "write", 0600, "/moe-moe.txt", false},
+	{true, "moe", "write", 0600, "/moe-moe.txt", false},
+	{false, "adm", "write", 0600, "/moe-moe.txt", false},
+	{false, "curly", "write", 0600, "/moe-moe.txt", false},
 
-	{false, "adm", "", "write", 0660, "/moe-moe.txt", false},
-	{false, "curly", "", "write", 0660, "/moe-moe.txt", false},
-	{true, "adm", "", "write", 0666, "/moe-moe.txt", false},
-	{true, "curly", "", "write", 0666, "/moe-moe.txt", false},
+	{false, "adm", "write", 0660, "/moe-moe.txt", false},
+	{false, "curly", "write", 0660, "/moe-moe.txt", false},
+	{true, "adm", "write", 0666, "/moe-moe.txt", false},
+	{true, "curly", "write", 0666, "/moe-moe.txt", false},
 
 	// Write file with different user (larry) and group (moe)
-	{false, "adm", "", "write", 0600, "/larry-moe.txt", false},
-	{false, "moe", "", "write", 0600, "/larry-moe.txt", false},
-	{true, "larry", "", "write", 0600, "/larry-moe.txt", false},
-	{false, "curly", "", "write", 0600, "/larry-moe.txt", false},
+	{false, "adm", "write", 0600, "/larry-moe.txt", false},
+	{false, "moe", "write", 0600, "/larry-moe.txt", false},
+	{true, "larry", "write", 0600, "/larry-moe.txt", false},
+	{false, "curly", "write", 0600, "/larry-moe.txt", false},
 
-	{false, "adm", "", "write", 0660, "/larry-moe.txt", false},
-	{true, "moe", "", "write", 0660, "/larry-moe.txt", false},
-	{true, "larry", "", "write", 0660, "/larry-moe.txt", false},
-	{false, "curly", "", "write", 0660, "/larry-moe.txt", false},
+	{false, "adm", "write", 0660, "/larry-moe.txt", false},
+	{true, "moe", "write", 0660, "/larry-moe.txt", false},
+	{true, "larry", "write", 0660, "/larry-moe.txt", false},
+	{false, "curly", "write", 0660, "/larry-moe.txt", false},
 
-	// Create files.
-	{false, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
-	{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
-	{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
-	{false, "moe", "adm", "create", 0600, "/books/larry/moe-draft", true},
+	/*
 
-	{true, "adm", "adm", "create", os.ModeDir + 0755, "/books", false},
 
-	// Delete files
-	{false, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
-	{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
-	{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
-	{false, "moe", "", "delete", 0600, "/books/larry/draft", true},
-	{false, "adm", "", "delete", 0600, "/books/larry/draft", true},
-	{true, "larry", "", "delete", 0600, "/books/larry/draft", true},
+
+		{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+		{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
+		{false, "moe", "adm", "create", 0600, "/books/larry/moe-draft", true},
+
+
+		// Delete files
+		{false, "moe", "adm", "create", os.ModeDir + 0755, "/books", false},
+		{false, "larry", "adm", "create", os.ModeDir + 0700, "/books/larry", true},
+		{false, "larry", "adm", "create", 0600, "/books/larry/draft", true},
+		{false, "moe", "", "delete", 0600, "/books/larry/draft", true},
+		{false, "adm", "", "delete", 0600, "/books/larry/draft", true},
+		{true, "larry", "", "delete", 0600, "/books/larry/draft", true},
+	*/
 }
