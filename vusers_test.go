@@ -2,15 +2,16 @@
    Copyright (c) 2015, Mark Bucciarelli <mkbucc@gmail.com>
 */
 
-package vufs
+package vufs_test
 
 import (
 	"testing"
+	"github.com/mbucc/vufs"
 )
 
 func TestUserFileLoaded(t *testing.T) {
 
-	users, _ := NewVusers("./test")
+	users, _ := vufs.NewVusers("./test")
 
 	if users.Uname2User("adm") == nil {
 		t.Error("Uname2User(\"adm\") was nil")

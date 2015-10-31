@@ -2,13 +2,14 @@
    Copyright (c) 2015, Mark Bucciarelli <mkbucc@gmail.com>
 */
 
-package vufs
+package vufs_test
+
 
 import (
 	"io/ioutil"
-	"os"
-	"path/filepath"
-	"testing"
+	//"os"
+	//"path/filepath"
+	//"testing"
 )
 
 var rootdir string
@@ -21,6 +22,7 @@ func init() {
 	}
 }
 
+/*
 func TestAdmIsDefaultOwner(t *testing.T) {
 
 	err := os.RemoveAll(rootdir)
@@ -104,3 +106,4 @@ func TestUidGidHasEntry(t *testing.T) {
 	}
 }
 
+*/

@@ -2,7 +2,7 @@
    Copyright (c) 2015, Mark Bucciarelli <mkbucc@gmail.com>
 */
 
-package vufs
+package vufs_test
 
 import (
 	"os"

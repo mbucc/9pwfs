@@ -2,7 +2,7 @@
    Copyright (c) 2015, Mark Bucciarelli <mkbucc@gmail.com>
 */
 
-package vufs
+package vufs_test
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"github.com/mbucc/vufs"
 
 	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
@@ -104,7 +105,7 @@ var initialFiles = map[string]initialFile{
 		0600},
 	"/moe-moe.txt":   {"/moe-moe.txt", "whatever", 0664},
 	"/larry-moe.txt": {"/larry-moe.txt", "whatever", 0664},
-	"/" + uidgidFile: {"/" + uidgidFile, "moe-moe.txt:3:3\nlarry-moe.txt:2:3\n", 0600},
+	//"/" + uidgidFile: {"/" + uidgidFile, "moe-moe.txt:3:3\nlarry-moe.txt:2:3\n", 0600},
 }
 
 // Initialize file system as:
@@ -181,9 +182,9 @@ func runserver(rootdir, port string) *client.Conn {
 	initfs(rootdir)
 
 	var err error
-	fs := New(rootdir)
+	fs := vufs.New(rootdir)
 	fs.Id = "vufs"
-	fs.Upool, err = NewVusers(rootdir)
+	fs.Upool, err = vufs.NewVusers(rootdir)
 	if err != nil {
 		panic(err)
 	}

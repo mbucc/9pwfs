@@ -751,12 +751,14 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		}
 	}
 
+/*
 
 	if dir.Uid != "" || dir.Gid != "" {
 		uid0, gid0, err := path2UserGroup(fid.path, req.Conn.Srv.Upool)
 		if err != nil {
 			panic("can't get user/group for " + fid.path + ": " + err.Error())
 		}
+
 		uid1, gid1 := uid0, gid0
 		if dir.Uid != "" {
 			uid1 = dir.Uid
@@ -764,12 +766,14 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		if dir.Gid != "" {
 			gid1 := dir.Gid
 		}
+
 		err = os.Chown(fid.path, int(uid1), int(gid1))
 		if err != nil {
 			panic("can't set user/group for " + fid.path + ": " + err.Error())
 		}
-	}
 
+	}
+*/
 
 	if dir.Name != "" {
 		// If we path.Join dir.Name to / before adding it to
