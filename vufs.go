@@ -442,10 +442,54 @@ func (u *VuFs) Open(req *srv.Req) {
 	req.RespondRopen(dir2Qid(st), 0)
 }
 
-func addUidGid(dir, file string, uid, gid int, fid *srv.Fid) error {
+func chown(dir, file string, uid, gid int, fid *srv.Fid) error {
 
 	fid.Lock()
 	defer fid.Unlock()
+
+	fn0 := dir + "/" + uidgidFile
+	//fn1 := fn0 + ".tmp"
+
+	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+
+	defer fp0.Close()
+
+	_, err = fp0.WriteString(fmt.Sprintf("%s:%d:%d\n", file, uid, gid))
+	if err != nil {
+		// BUG(mbucc) Roll back  bytes written to .uidgid on error.
+		return err
+	}
+
+/*
+
+	fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err == nil {
+		defer fp0.Close()
+		_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
+
+	switch err {
+	case nil:
+
+	if err == nil && os.IsNotExist(err){
+		return err
+	}
+
+	if err != nil {
+
+
+
+
+*/
+
+	return nil
+}
+
+
+
+func addUidGid(dir, file string, uid, gid int) error {
 
 	fn0 := dir + "/" + uidgidFile
 	//fn1 := fn0 + ".tmp"
@@ -562,7 +606,7 @@ func (*VuFs) Create(req *srv.Req) {
 		panic(fmt.Sprintf("no user for parent directory gid %d", dirgid))
 	}
 	
-	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), gu.Id(), req.Fid)
+	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), gu.Id())
 	if err != nil {
 		file.Close()
 		fid.file = nil
@@ -707,30 +751,26 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		}
 	}
 
-/*
-	// BUG(mbucc) implement chown
-	uid, gid := p.NOUID, p.NOUID
 
-	uid, err = lookup(dir.Uid, false)
-	if err != nil {
-		req.RespondError(err)
-		return
-	}
-
-	gid, err = lookup(dir.Gid, true)
-	if err != nil {
-		req.RespondError(err)
-		return
-	}
-
-	if uid != p.NOUID || gid != p.NOUID {
-		e := os.Chown(fid.path, int(uid), int(gid))
-		if e != nil {
-			req.RespondError(toError(e))
-			return
+	if dir.Uid != "" || dir.Gid != "" {
+		uid0, gid0, err := path2UserGroup(fid.path, req.Conn.Srv.Upool)
+		if err != nil {
+			panic("can't get user/group for " + fid.path + ": " + err.Error())
+		}
+		uid1, gid1 := uid0, gid0
+		if dir.Uid != "" {
+			uid1 = dir.Uid
+		}
+		if dir.Gid != "" {
+			gid1 := dir.Gid
+		}
+		err = os.Chown(fid.path, int(uid1), int(gid1))
+		if err != nil {
+			panic("can't set user/group for " + fid.path + ": " + err.Error())
 		}
 	}
-*/
+
+
 	if dir.Name != "" {
 		// If we path.Join dir.Name to / before adding it to
 		// the fid path, that ensures nobody gets to walk out of the

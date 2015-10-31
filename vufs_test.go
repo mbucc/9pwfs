@@ -175,6 +175,7 @@ func initfs(rootdir string) {
 var testserver net.Listener
 var started bool
 
+// Start up vufs file server.  If it is already running, stop it first.
 func runserver(rootdir, port string) *client.Conn {
 
 	initfs(rootdir)
@@ -345,6 +346,47 @@ func delete(conn *client.Conn, username, filepath string) error {
 
 }
 
+// Change file owner.
+func chown(conn *client.Conn, username, filepath string) error {
+
+	fsys, err := conn.Attach(nil, username, "/")
+	if err != nil {
+		return err
+	}
+
+	d := &plan9.Dir{}
+	d.Null()
+	d.Uid = username
+	err = fsys.Wstat(filepath, d)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+// Change file group.
+func chgrp(conn *client.Conn, username, filepath string) error {
+
+	fsys, err := conn.Attach(nil, username, "/")
+	if err != nil {
+		return err
+	}
+
+	d := &plan9.Dir{}
+	d.Null()
+	d.Gid = username
+	err = fsys.Wstat(filepath, d)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
 // Return owner and group of given file.
 func usergroup(conn *client.Conn, filepath, user string) (string, string, error) {
 
@@ -363,6 +405,34 @@ func usergroup(conn *client.Conn, filepath, user string) (string, string, error)
 	return dir.Uid, dir.Gid, nil
 }
 
+// Change directory owner.
+func TestWstat(t *testing.T) {
+	conn := runserver(rootdir, port)
+
+	err := create(conn, "adm", "/books", os.ModeDir+0755)
+	if err != nil {
+		t.Errorf("adm could not create /books")
+	}
+	err = chown(conn, "moe", "/books")
+	if err != nil {
+		t.Errorf("adm could not chown to moe")
+	}
+	err = chgrp(conn, "moe", "/books")
+	if err != nil {
+		t.Errorf("adm could not chown to moe")
+	}
+	user, group, err := usergroup(conn, "/books", "adm")
+	if err != nil {
+		t.Errorf("usergroup('/books'): %s\n", err)
+	}
+	if user != "moe" {
+		t.Errorf("wrong user, got '%s', expected 'moe'\n", user)
+	}
+	if group != "moe" {
+		t.Errorf("wrong user, got '%s', expected 'moe'\n", group)
+	}
+}
+
 func TestCreate(t *testing.T) {
 
 	conn := runserver(rootdir, port)
@@ -370,12 +440,20 @@ func TestCreate(t *testing.T) {
 	// User "moe" does not have write permission in parent directory.
 	err := create(conn, "moe", "/books", os.ModeDir+0755)
 	if err == nil {
-		t.Error("moe could create directory.")
+		t.Error("moe could create /books.")
 	}
 
 	err = create(conn, "adm", "/books", os.ModeDir+0755)
 	if err != nil {
-		t.Errorf("adm could not create directory")
+		t.Errorf("adm could not create /books")
+	}
+	err = chown(conn, "moe", "/books")
+	if err != nil {
+		t.Errorf("adm could not chown to moe")
+	}
+	err = create(conn, "moe", "/books/chapter1", os.ModeDir+0755)
+	if err != nil {
+		t.Errorf("moe could not create /books/chapter1")
 	}
 
 	/*
