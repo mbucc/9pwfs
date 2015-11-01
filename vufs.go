@@ -884,10 +884,23 @@ func (vu *VuFs) rerror(r *ConnFcall) {
 
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
-	rc := &Fcall{Type: Rversion, Msize: r.fc.Msize, Version: r.fc.Version}
-	if r.fc.Version != VERSION9P {
-		rc.Version = "unknown"
+
+	ver := r.fc.Version
+	i := strings.Index(ver, ".")
+	if i > 0 {
+		ver = ver[:i]
 	}
+	if ver != VERSION9P {
+		ver = "unknown"
+	}
+
+	msz := r.fc.Msize
+	if msz > MAX_MSIZE {
+		msz = MAX_MSIZE
+	}
+
+	
+	rc := &Fcall{Type: Rversion, Msize: msz, Version: ver}
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }

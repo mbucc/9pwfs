@@ -52,9 +52,9 @@ http://plan9.bell-labs.com/sys/man/5/INDEX.html
 
 version
       Client suggests a maximum limit on any 9p message (incl. headers), in bytes
-  [] Server replies with msize that is less than or equal to client's suggestion
+  [x] Server replies with msize that is less than or equal to client's suggestion
   [x] If server doesn't understand client's version string, respond with Rversion  "unknown"
-  [] Client's version is string up to an optional period-separated suffix.
+  [x] Client's version is string up to an optional period-separated suffix.
   [] A successful version aborts any pending I/O on connection and frees all fids.
 
 attach
