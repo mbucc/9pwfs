@@ -55,7 +55,7 @@ version
   [x] Server replies with msize that is less than or equal to client's suggestion
   [x] If server doesn't understand client's version string, respond with Rversion  "unknown"
   [x] Client's version is string up to an optional period-separated suffix.
-  [] A successful version aborts any pending I/O on connection and frees all fids.
+  [x] A successful version aborts any pending I/O on connection and frees all fids.
 
 attach
   [] If fid is already used (on this connection), return an error.

@@ -885,6 +885,7 @@ func (vu *VuFs) rerror(r *ConnFcall) {
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 
+	// We only support 9P2000.
 	ver := r.fc.Version
 	i := strings.Index(ver, ".")
 	if i > 0 {
@@ -894,11 +895,23 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 		ver = "unknown"
 	}
 
+	// Clamp message size.
 	msz := r.fc.Msize
 	if msz > MAX_MSIZE {
 		msz = MAX_MSIZE
 	}
 
+	// Drain any pending fcalls.
+	done := false
+	for ver != "unknown" && !done {
+		select {
+		case x := <-vu.fcallchan:
+			x.emsg = "new session started, dropping this pending request"
+			vu.rerror(x)
+		default:
+			done = true	
+		}
+	}
 	
 	rc := &Fcall{Type: Rversion, Msize: msz, Version: ver}
 	vu.chat("-> " + rc.String())
