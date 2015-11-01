@@ -931,7 +931,7 @@ func (vu *VuFs) listen() error {
 	return nil
 }
 
-// Start listening on given protocol and port for new connections.
+// Start listening for connections.
 func (vu *VuFs) Start(ntype, addr string) error {
 	vu.Lock()
 	defer vu.Unlock()
@@ -947,6 +947,7 @@ func (vu *VuFs) Start(ntype, addr string) error {
 	return nil
 }
 
+// Stop listening, do other clean up and shut down.
 func (vu *VuFs) Stop() {
 	vu.Lock()
 	defer vu.Unlock()
