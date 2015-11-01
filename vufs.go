@@ -885,6 +885,9 @@ func (vu *VuFs) rerror(r *ConnFcall) {
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 	rc := &Fcall{Type: Rversion, Msize: r.fc.Msize, Version: r.fc.Version}
+	if r.fc.Version != VERSION9P {
+		rc.Version = "unknown"
+	}
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }

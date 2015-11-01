@@ -30,6 +30,7 @@ TODO
 
 
 Notes on Section 5 of Plan 9 Manual
+http://plan9.bell-labs.com/sys/man/5/INDEX.html
 
 0intro
   * The tag connects the async response (R-message) to the request (T-message).
@@ -48,6 +49,13 @@ Notes on Section 5 of Plan 9 Manual
 	QTEXCL	DMEXCL	only one client can have file open at a time
 	QTAUTH	DMAUTH	authentication file established by auth messages
 	QTTMP	DMTMP	skip when doing backups
+
+version
+      Client suggests a maximum limit on any 9p message (incl. headers), in bytes
+  [] Server replies with msize that is less than or equal to client's suggestion
+  [x] If server doesn't understand client's version string, respond with Rversion  "unknown"
+  [] Client's version is string up to an optional period-separated suffix.
+  [] A successful version aborts any pending I/O on connection and frees all fids.
 
 attach
   [] If fid is already used (on this connection), return an error.
