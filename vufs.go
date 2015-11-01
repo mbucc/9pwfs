@@ -27,26 +27,27 @@ type Fid struct {
 }
 
 type Conn struct {
-	rwc io.ReadWriteCloser
-	srv *VuFs
+	rwc   io.ReadWriteCloser
+	srv   *VuFs
 	dying bool
 }
 
 type ConnFcall struct {
 	conn *Conn
 	fc   *Fcall
+	emsg string
 }
 
 type VuFs struct {
 	sync.Mutex
-	Root          string
-	dying         bool
-	connections   []*Conn
-	connchan      chan net.Conn
-	fcallchan chan *ConnFcall
-	chatty        bool
-	done          chan bool
-	listener net.Listener
+	Root        string
+	dying       bool
+	connections []*Conn
+	connchan    chan net.Conn
+	fcallchan   chan *ConnFcall
+	chatty      bool
+	done        chan bool
+	listener    net.Listener
 }
 
 func (vu *VuFs) Chatty(b bool) {
@@ -859,14 +860,11 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
-
 func (c *Conn) recv() {
 	for !c.dying {
-		c.srv.chat("wating for fcall on conn")
 		fc, err := ReadFcall(c.rwc)
 		if err == nil {
-			fmt.Println(fc.String())
-			c.srv.fcallchan <- &ConnFcall{c, fc}
+			c.srv.fcallchan <- &ConnFcall{c, fc, ""}
 		} else {
 			if !c.dying {
 				c.srv.chat("recv() error: " + err.Error())
@@ -877,17 +875,32 @@ func (c *Conn) recv() {
 	c.srv.chat("recv() done")
 }
 
+func (vu *VuFs) rerror(r *ConnFcall) {
+	vu.chat("<- " + r.fc.String())
+	rc := &Fcall{Type: Rerror, Msize: r.fc.Msize, Ename: r.emsg}
+	vu.chat("-> " + rc.String())
+	WriteFcall(r.conn.rwc, rc)
+}
+
+func (vu *VuFs) rversion(r *ConnFcall) {
+	vu.chat("<- " + r.fc.String())
+	rc := &Fcall{Type: Rversion, Msize: r.fc.Msize, Version: r.fc.Version}
+	vu.chat("-> " + rc.String())
+	WriteFcall(r.conn.rwc, rc)
+}
+
+// Serialize all transaction requests.  (Fan-in channel.)
 func (vu *VuFs) fcallhandler() {
-
-	for  {
-
+	for {
 		x, more := <-vu.fcallchan
-
 		if more {
-			vu.chat("<- " + x.fc.String())
-			rc := &Fcall{Type: Rversion, Msize: x.fc.Msize, Version: x.fc.Version}
-			vu.chat("-> " + rc.String())
-			WriteFcall(x.conn.rwc, rc)
+			if f, ok := fcallhandlers[x.fc.Type]; ok {
+				f(x)
+			} else {
+				vu.chat(string(x.fc.Type) + "was not found")
+				x.emsg = "not implemented"
+				vu.rerror(x)
+			}
 		} else {
 			vu.chat("fcallchan closed")
 			return
@@ -898,9 +911,7 @@ func (vu *VuFs) fcallhandler() {
 func (vu *VuFs) connhandler() {
 	for {
 		vu.chat("connhandler")
-
 		conn, more := <-vu.connchan
-
 		if more {
 			c := &Conn{rwc: conn, srv: vu}
 			vu.connections = append(vu.connections, c)
@@ -915,7 +926,7 @@ func (vu *VuFs) connhandler() {
 func (vu *VuFs) listen() error {
 	var err error
 	vu.chat("start listening for connections")
-	for  {
+	for {
 		c, err := vu.listener.Accept()
 		if err != nil {
 			break
@@ -951,9 +962,16 @@ func (vu *VuFs) Start(ntype, addr string) error {
 func (vu *VuFs) Stop() {
 	vu.Lock()
 	defer vu.Unlock()
+
 	vu.dying = true
 	close(vu.connchan)
+
 	close(vu.fcallchan)
+	for x := range vu.fcallchan {
+		x.emsg = "file system stopped"
+		vu.rerror(x)
+	}
+
 	for _, c := range vu.connections {
 		c.dying = true
 		c.rwc.Close()
@@ -962,11 +980,19 @@ func (vu *VuFs) Stop() {
 	<-vu.done
 }
 
+var fcallhandlers map[uint8]func(*ConnFcall)
+
 func New(root string) *VuFs {
-	vufs := &VuFs{
-		Root:          root,
-		connchan:      make(chan net.Conn),
+
+	vu := &VuFs{
+		Root:      root,
+		connchan:  make(chan net.Conn),
 		fcallchan: make(chan *ConnFcall),
-		done : make(chan bool)}
-	return vufs
+		done:      make(chan bool)}
+
+	fcallhandlers = map[uint8]func(*ConnFcall){
+		Tversion: vu.rversion,
+	}
+
+	return vu
 }
