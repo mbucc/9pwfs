@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,9 +25,37 @@ type Fid struct {
 	file *os.File
 }
 
+type Conn struct {
+	rwc io.ReadWriteCloser
+	srv *VuFs
+	dying bool
+}
+
+type ConnFcall struct {
+	conn *Conn
+	fc   *Fcall
+}
+
 type VuFs struct {
-	srv.Srv
-	Root string
+	//srv.Srv
+	Root          string
+	dying         bool
+	connections   []*Conn
+	connchan      chan net.Conn
+	fcallchan chan *ConnFcall
+	chatty        bool
+	done          chan bool
+	listener net.Listener
+}
+
+func (vu *VuFs) Chatty(b bool) {
+	vu.chatty = b
+}
+
+func (vu *VuFs) chat(msg string) {
+	if vu.chatty {
+		fmt.Println("vufs: " + msg)
+	}
 }
 
 func toError(err error) *p.Error {
@@ -463,31 +492,29 @@ func chown(dir, file string, uid, gid int, fid *srv.Fid) error {
 		return err
 	}
 
-/*
+	/*
 
-	fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err == nil {
-		defer fp0.Close()
-		_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
+		fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err == nil {
+			defer fp0.Close()
+			_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
 
-	switch err {
-	case nil:
+		switch err {
+		case nil:
 
-	if err == nil && os.IsNotExist(err){
-		return err
-	}
+		if err == nil && os.IsNotExist(err){
+			return err
+		}
 
-	if err != nil {
-
-
+		if err != nil {
 
 
-*/
+
+
+	*/
 
 	return nil
 }
-
-
 
 func addUidGid(dir, file string, uid, gid int) error {
 
@@ -507,30 +534,29 @@ func addUidGid(dir, file string, uid, gid int) error {
 		return err
 	}
 
-/*
+	/*
 
-	fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err == nil {
-		defer fp0.Close()
-		_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
+		fp0, err := os.OpenFile(fn0, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err == nil {
+			defer fp0.Close()
+			_, err = fp0.WriteString(fmt.Sprintf("%s:%s:%s\n", file, uid, uid))
 
-	switch err {
-	case nil:
+		switch err {
+		case nil:
 
-	if err == nil && os.IsNotExist(err){
-		return err
-	}
+		if err == nil && os.IsNotExist(err){
+			return err
+		}
 
-	if err != nil {
-
-
+		if err != nil {
 
 
-*/
+
+
+	*/
 
 	return nil
 }
-
 
 func (*VuFs) Create(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
@@ -565,12 +591,12 @@ func (*VuFs) Create(req *srv.Req) {
 		}
 
 	case tc.Perm&p.DMSYMLINK != 0,
-			tc.Perm&p.DMLINK != 0,
-			tc.Perm&p.DMNAMEDPIPE != 0,
-			tc.Perm&p.DMDEVICE != 0,
-			tc.Perm&p.DMSOCKET != 0,
-			tc.Perm&p.DMSETUID != 0,
-			tc.Perm&p.DMSETGID != 0:
+		tc.Perm&p.DMLINK != 0,
+		tc.Perm&p.DMNAMEDPIPE != 0,
+		tc.Perm&p.DMDEVICE != 0,
+		tc.Perm&p.DMSOCKET != 0,
+		tc.Perm&p.DMSETUID != 0,
+		tc.Perm&p.DMSETGID != 0:
 		req.RespondError(srv.Ebaduse)
 		return
 
@@ -605,7 +631,7 @@ func (*VuFs) Create(req *srv.Req) {
 	if gu == nil {
 		panic(fmt.Sprintf("no user for parent directory gid %d", dirgid))
 	}
-	
+
 	err = addUidGid(parentPath, tc.Name, req.Fid.User.Id(), gu.Id())
 	if err != nil {
 		file.Close()
@@ -647,7 +673,7 @@ func (u *VuFs) Read(req *srv.Req) {
 		// Bytes/one packed dir = 49 + len(name) + len(uid) + len(gid) + len(muid)
 		// Estimate 49 + 20 + 20 + 20 + 11
 		// From ../../lionkov/go9p/p/p9.go:421,427
-		dirents := make([]byte, 0, 120 * len(dirs))
+		dirents := make([]byte, 0, 120*len(dirs))
 		for i := 0; i < len(dirs); i++ {
 			path := fid.path + "/" + dirs[i].Name()
 			st, err := dir2Dir(path, dirs[i], req.Conn.Srv.Upool)
@@ -751,29 +777,29 @@ func (u *VuFs) Wstat(req *srv.Req) {
 		}
 	}
 
-/*
+	/*
 
-	if dir.Uid != "" || dir.Gid != "" {
-		uid0, gid0, err := path2UserGroup(fid.path, req.Conn.Srv.Upool)
-		if err != nil {
-			panic("can't get user/group for " + fid.path + ": " + err.Error())
-		}
+		if dir.Uid != "" || dir.Gid != "" {
+			uid0, gid0, err := path2UserGroup(fid.path, req.Conn.Srv.Upool)
+			if err != nil {
+				panic("can't get user/group for " + fid.path + ": " + err.Error())
+			}
 
-		uid1, gid1 := uid0, gid0
-		if dir.Uid != "" {
-			uid1 = dir.Uid
-		}
-		if dir.Gid != "" {
-			gid1 := dir.Gid
-		}
+			uid1, gid1 := uid0, gid0
+			if dir.Uid != "" {
+				uid1 = dir.Uid
+			}
+			if dir.Gid != "" {
+				gid1 := dir.Gid
+			}
 
-		err = os.Chown(fid.path, int(uid1), int(gid1))
-		if err != nil {
-			panic("can't set user/group for " + fid.path + ": " + err.Error())
-		}
+			err = os.Chown(fid.path, int(uid1), int(gid1))
+			if err != nil {
+				panic("can't set user/group for " + fid.path + ": " + err.Error())
+			}
 
-	}
-*/
+		}
+	*/
 
 	if dir.Name != "" {
 		// If we path.Join dir.Name to / before adding it to
@@ -832,6 +858,109 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
+
+func (c *Conn) recv() {
+	for !c.dying {
+		c.srv.chat("wating for fcall on conn")
+		fc, err := ReadFcall(c.rwc)
+		if err == nil {
+			fmt.Println(fc.String())
+			c.srv.fcallchan <- &ConnFcall{c, fc}
+		} else {
+			if !c.dying {
+				c.srv.chat("recv() error: " + err.Error())
+			}
+			continue
+		}
+	}
+	c.srv.chat("recv() done")
+}
+
+func (vu *VuFs) fcallhandler() {
+
+	for  {
+
+		x, more := <-vu.fcallchan
+
+		if more {
+			vu.chat("<- " + x.fc.String())
+			rc := &Fcall{Type: Rversion, Msize: x.fc.Msize, Version: x.fc.Version}
+			vu.chat("-> " + rc.String())
+			WriteFcall(x.conn.rwc, rc)
+		} else {
+			vu.chat("fcallchan closed")
+			return
+		}
+	}
+}
+
+func (vu *VuFs) connhandler() {
+	for {
+		vu.chat("connhandler")
+
+		conn, more := <-vu.connchan
+
+		if more {
+			c := &Conn{rwc: conn, srv: vu}
+			vu.connections = append(vu.connections, c)
+			go c.recv()
+		} else {
+			vu.chat("connchan closed")
+			return
+		}
+	}
+}
+
+func (vu *VuFs) listen() error {
+	var err error
+	vu.chat("start listening for connections")
+	for  {
+		c, err := vu.listener.Accept()
+		if err != nil {
+			break
+		}
+		vu.chat("new connection")
+		vu.connchan <- c
+	}
+	if err != nil {
+		vu.chat("error!")
+	}
+	vu.chat("stop listening for connections")
+	vu.done <- true
+	return nil
+}
+
+// Start listening on given protocol and port for new connections.
+func (vu *VuFs) Start(ntype, addr string) error {
+	var err error
+	vu.chat("start")
+	vu.listener, err = net.Listen(ntype, addr)
+	if err != nil {
+		return err
+	}
+	go vu.connhandler()
+	go vu.listen()
+	go vu.fcallhandler()
+	return nil
+}
+
+func (vu *VuFs) Stop() {
+	vu.dying = true
+	close(vu.connchan)
+	close(vu.fcallchan)
+	for _, c := range vu.connections {
+		c.dying = true
+		c.rwc.Close()
+	}
+	vu.listener.Close()
+	<-vu.done
+}
+
 func New(root string) *VuFs {
-	return &VuFs{Root: root}
+	vufs := &VuFs{
+		Root:          root,
+		connchan:      make(chan net.Conn),
+		fcallchan: make(chan *ConnFcall),
+		done : make(chan bool)}
+	return vufs
 }

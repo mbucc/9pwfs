@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"testing"
-	"time"
 	"github.com/mbucc/vufs"
 
 	"9fans.net/go/plan9"
@@ -174,63 +173,37 @@ func initfs(rootdir string) {
 
 
 var testserver net.Listener
-var started bool
+var fs *vufs.VuFs
 
 // Start up vufs file server.  If it is already running, stop it first.
 func runserver(rootdir, port string) *client.Conn {
 
+	var err error
+
 	initfs(rootdir)
 
-	var err error
-	fs := vufs.New(rootdir)
-	fs.Id = "vufs"
-	fs.Upool, err = vufs.NewVusers(rootdir)
-	if err != nil {
-		panic(err)
-	}
-	//fs.Debuglevel = 1
+fmt.Println("New")
+	fs = vufs.New(rootdir)
+fmt.Println("Start")
+	fs.Start("tcp", port)
 
-	fs.Start(fs)
-
-	if started {
-		fmt.Println("stopping testserver")
-		err = testserver.Close()
-		if err != nil {
-			panic(err)
-		}
-		time.Sleep(250 * time.Millisecond)
-	} else {
-		fmt.Println("testserver not running")
-	}
-
-	fmt.Println("starting testserver")
-	testserver, err = net.Listen("tcp", port)
-	if err != nil {
-		panic("can't start server: " + err.Error())
-	}
-	started = true
-
-	go func() {
-		// Give last go routine time to stop listening.
-		for i := 0; i < 10; i++ {
-			if err = fs.StartListener(testserver); err != nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
+fmt.Println("Client")
 	// Make sure runserver is listening before returning.
 	var conn *client.Conn
 	for i := 0; i < 15; i++ {
+fmt.Println("Dialing")
+
 		if conn, err = client.Dial("tcp", port); err == nil {
 			break
 		}
+fmt.Println("Dial done")
+
 	}
 
 	if err != nil {
 		panic("filesystem server didn't start" + err.Error())
 	}
+fmt.Println("Client Connected")
 
 	return conn
 }
