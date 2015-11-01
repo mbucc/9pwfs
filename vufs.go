@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -37,7 +38,7 @@ type ConnFcall struct {
 }
 
 type VuFs struct {
-	//srv.Srv
+	sync.Mutex
 	Root          string
 	dying         bool
 	connections   []*Conn
@@ -932,6 +933,8 @@ func (vu *VuFs) listen() error {
 
 // Start listening on given protocol and port for new connections.
 func (vu *VuFs) Start(ntype, addr string) error {
+	vu.Lock()
+	defer vu.Unlock()
 	var err error
 	vu.chat("start")
 	vu.listener, err = net.Listen(ntype, addr)
@@ -945,6 +948,8 @@ func (vu *VuFs) Start(ntype, addr string) error {
 }
 
 func (vu *VuFs) Stop() {
+	vu.Lock()
+	defer vu.Unlock()
 	vu.dying = true
 	close(vu.connchan)
 	close(vu.fcallchan)
