@@ -882,6 +882,28 @@ func (vu *VuFs) rerror(r *ConnFcall) {
 	WriteFcall(r.conn.rwc, rc)
 }
 
+func (vu *VuFs) rattach(r *ConnFcall) {
+	vu.chat("<- " + r.fc.String())
+
+	// To simplify dot-dot logic in walk, we  only allow attaches to root.
+	if r.fc.Aname != "/" {
+		r.emsg = "can only attach to root directory"
+		vu.rerror(r)
+	}
+
+	// We don't support authentication.
+	if r.fc.Afid != NOFID {
+		r.emsg = "authentication not supported"
+		vu.rerror(r)
+	}
+
+	// BUG(mbucc): Qid in Rattach is stubbed.
+	rc := &Fcall{Type: Rattach, Qid: Qid{1,1,1}}
+	vu.chat("-> " + rc.String())
+	WriteFcall(r.conn.rwc, rc)
+}
+
+
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 
@@ -1021,6 +1043,7 @@ func New(root string) *VuFs {
 
 	fcallhandlers = map[uint8]func(*ConnFcall){
 		Tversion: vu.rversion,
+		Tattach: vu.rattach,
 	}
 
 	return vu
