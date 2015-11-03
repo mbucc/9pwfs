@@ -58,8 +58,8 @@ version
   [x] A successful version aborts any pending I/O on connection and frees all fids.
 
 attach
-  [] If fid is already used (on this connection), return an error.
-  [] If server does not require authentication, auth returns an error.
+  [x] If fid is already used (on this connection), return an error.
+  [x] If server does not require authentication, auth returns an error.
   [] Client can select attach to a "file tree" identified by the aname parameter.
   [] If Client wants to authenticate, attach negotiates authentication via afid parameter.
   * If it does, auth returns aqid which is used to communicate credentials.

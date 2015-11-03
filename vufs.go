@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"path"
@@ -27,15 +26,25 @@ type Fid struct {
 }
 
 type Conn struct {
-	rwc   io.ReadWriteCloser
-	srv   *VuFs
-	dying bool
+	rwc     io.ReadWriteCloser
+	srv     *VuFs
+	dying   bool
+	usedfid map[uint32]bool
 }
 
 type ConnFcall struct {
 	conn *Conn
 	fc   *Fcall
 	emsg string
+}
+
+type File struct {
+	info *Dir
+	list []File
+}
+
+type Tree struct {
+	root *File
 }
 
 type VuFs struct {
@@ -48,6 +57,7 @@ type VuFs struct {
 	chatty      bool
 	done        chan bool
 	listener    net.Listener
+	tree        *Tree
 }
 
 func (vu *VuFs) Chatty(b bool) {
@@ -208,6 +218,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 }
 
 func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
+
 	sysif := d.Sys()
 	if sysif == nil {
 		return nil, &os.PathError{"dir2Dir", s, nil}
@@ -219,10 +230,10 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
 	default:
 		return nil, &os.PathError{"dir2Dir: sysif has wrong type", s, nil}
 	}
-
 	dir := new(p.Dir)
 	dir.Qid = *dir2Qid(d)
-	dir.Mode = dir2Npmode(d)
+
+
 	dir.Atime = uint32(atime(sysMode).Unix())
 	dir.Mtime = uint32(d.ModTime().Unix())
 	dir.Length = uint64(d.Size())
@@ -303,18 +314,6 @@ func CheckPerm(f *p.Dir, user p.User, perm uint32) bool {
 	return false
 }
 
-func (*VuFs) ConnOpened(conn *srv.Conn) {
-	if conn.Srv.Debuglevel > 0 {
-		log.Println("connected")
-	}
-}
-
-func (*VuFs) ConnClosed(conn *srv.Conn) {
-	if conn.Srv.Debuglevel > 0 {
-		log.Println("disconnected")
-	}
-}
-
 func (*VuFs) FidDestroy(sfid *srv.Fid) {
 	var fid *Fid
 
@@ -326,28 +325,6 @@ func (*VuFs) FidDestroy(sfid *srv.Fid) {
 	if fid != nil {
 		fid.file.Close()
 	}
-}
-
-// Always attach to the VuFs root.
-func (u *VuFs) Attach(req *srv.Req) {
-
-	if req.Tc.Aname != "/" && req.Tc.Aname != "" {
-		req.RespondError(srv.Eperm)
-		return
-	}
-
-	st, err := os.Stat(u.Root)
-	if err != nil {
-		req.RespondError(toError(err))
-		return
-	}
-
-	fid := new(Fid)
-	fid.path = u.Root
-	req.Fid.Aux = fid
-
-	qid := dir2Qid(st)
-	req.RespondRattach(qid)
 }
 
 func (*VuFs) Flush(req *srv.Req) {}
@@ -875,34 +852,14 @@ func (c *Conn) recv() {
 	c.srv.chat("recv() done")
 }
 
+func (c *Conn) hasfid(fid int) {
+}
+
 func (vu *VuFs) rerror(r *ConnFcall) {
-	vu.chat("<- " + r.fc.String())
 	rc := &Fcall{Type: Rerror, Msize: r.fc.Msize, Ename: r.emsg}
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }
-
-func (vu *VuFs) rattach(r *ConnFcall) {
-	vu.chat("<- " + r.fc.String())
-
-	// To simplify dot-dot logic in walk, we  only allow attaches to root.
-	if r.fc.Aname != "/" {
-		r.emsg = "can only attach to root directory"
-		vu.rerror(r)
-	}
-
-	// We don't support authentication.
-	if r.fc.Afid != NOFID {
-		r.emsg = "authentication not supported"
-		vu.rerror(r)
-	}
-
-	// BUG(mbucc): Qid in Rattach is stubbed.
-	rc := &Fcall{Type: Rattach, Qid: Qid{1,1,1}}
-	vu.chat("-> " + rc.String())
-	WriteFcall(r.conn.rwc, rc)
-}
-
 
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
@@ -931,13 +888,45 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 			x.emsg = "new session started, dropping this pending request"
 			vu.rerror(x)
 		default:
-			done = true	
+			done = true
 		}
 	}
-	
+
 	rc := &Fcall{Type: Rversion, Msize: msz, Version: ver}
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
+}
+
+func (vu *VuFs) rattach(r *ConnFcall) {
+	vu.chat("<- " + r.fc.String())
+
+	// To simplify dot-dot logic in walk, we  only allow attaches to root.
+	if r.fc.Aname != "/" {
+		r.emsg = "can only attach to root directory"
+		vu.rerror(r)
+	}
+
+	// We don't support authentication.
+	if r.fc.Afid != NOFID {
+		r.emsg = "authentication not supported"
+		vu.rerror(r)
+	}
+
+	if _, inuse := r.conn.usedfid[r.fc.Fid]; inuse {
+		r.emsg = "already in use"
+		vu.rerror(r)
+	}
+	r.conn.usedfid[r.fc.Fid] = true
+
+	rc := &Fcall{Type: Rattach, Qid: vu.tree.root.info.Qid}
+	vu.chat("-> " + rc.String())
+	WriteFcall(r.conn.rwc, rc)
+}
+
+func (vu *VuFs) rauth(r *ConnFcall) {
+	vu.chat("<- " + r.fc.String())
+	r.emsg = "not supported"
+	vu.rerror(r)
 }
 
 // Serialize all transaction requests.  (Fan-in channel.)
@@ -964,7 +953,7 @@ func (vu *VuFs) connhandler() {
 		vu.chat("connhandler")
 		conn, more := <-vu.connchan
 		if more {
-			c := &Conn{rwc: conn, srv: vu}
+			c := &Conn{rwc: conn, srv: vu, usedfid: make(map[uint32]bool)}
 			vu.connections = append(vu.connections, c)
 			go c.recv()
 		} else {
@@ -997,8 +986,14 @@ func (vu *VuFs) listen() error {
 func (vu *VuFs) Start(ntype, addr string) error {
 	vu.Lock()
 	defer vu.Unlock()
-	var err error
+
 	vu.chat("start")
+
+	err := vu.buildtree()
+	if err != nil {
+		return err
+	}
+
 	vu.listener, err = net.Listen(ntype, addr)
 	if err != nil {
 		return err
@@ -1031,19 +1026,76 @@ func (vu *VuFs) Stop() {
 	<-vu.done
 }
 
+func (f *File) init(path string) error {
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	sysif := info.Sys()
+	if sysif == nil {
+		return fmt.Errorf("no stat datasource for '%s'", path)
+	}
+	var sysMode *syscall.Stat_t
+	switch t := sysif.(type) {
+	case *syscall.Stat_t:
+		sysMode = t
+	default:
+		return fmt.Errorf("stat datasource is not a Stat_t for '%s'", path)
+	}
+	stat := sysif.(*syscall.Stat_t)
+
+	dir := new(Dir)
+	dir.Null()
+
+	dir.Qid.Path = stat.Ino
+	dir.Qid.Vers = uint32(info.ModTime().UnixNano() / 1000000)
+	dir.Mode = Perm(info.Mode() & 0777)
+
+	if info.IsDir() {
+		dir.Mode |= p.DMDIR
+		dir.Qid.Vers |= p.QTDIR
+	}
+
+	dir.Atime = uint32(atime(sysMode).Unix())
+	dir.Mtime = uint32(info.ModTime().Unix())
+	dir.Length = uint64(info.Size())
+	dir.Name = path[strings.LastIndex(path, "/")+1:]
+
+	// BUG(mbucc) uid and gid are stubbed in file init().
+	dir.Uid = "stubbed"
+	dir.Gid = "stubbed"
+
+	f.info = dir
+
+	return nil
+}
+
+func (vu *VuFs) buildtree() error {
+	f := new(File)
+	err := f.init(vu.Root)
+	if err != nil {
+		return err
+	}
+	vu.tree = &Tree{root: f}
+	return nil
+}
+
 var fcallhandlers map[uint8]func(*ConnFcall)
 
 func New(root string) *VuFs {
 
-	vu := &VuFs{
-		Root:      root,
-		connchan:  make(chan net.Conn),
-		fcallchan: make(chan *ConnFcall),
-		done:      make(chan bool)}
+	vu := new(VuFs)
+	vu.Root = root
+	vu.connchan = make(chan net.Conn)
+	vu.fcallchan = make(chan *ConnFcall)
+	vu.done =make(chan bool)
 
 	fcallhandlers = map[uint8]func(*ConnFcall){
 		Tversion: vu.rversion,
-		Tattach: vu.rattach,
+		Tattach:  vu.rattach,
+		Tauth:    vu.rauth,
 	}
 
 	return vu
