@@ -26,10 +26,10 @@ type Fid struct {
 }
 
 type Conn struct {
-	rwc     io.ReadWriteCloser
-	srv     *VuFs
-	dying   bool
-	usedfid map[uint32]bool
+	rwc   io.ReadWriteCloser
+	srv   *VuFs
+	dying bool
+	fids  map[uint32]*File
 }
 
 type ConnFcall struct {
@@ -49,15 +49,16 @@ type Tree struct {
 
 type VuFs struct {
 	sync.Mutex
-	Root        string
-	dying       bool
-	connections []*Conn
-	connchan    chan net.Conn
-	fcallchan   chan *ConnFcall
-	chatty      bool
-	done        chan bool
-	listener    net.Listener
-	tree        *Tree
+	Root          string
+	dying         bool
+	connections   []*Conn
+	connchan      chan net.Conn
+	fcallchan     chan *ConnFcall
+	chatty        bool
+	connchanDone  chan bool
+	fcallchanDone chan bool
+	listener      net.Listener
+	tree          *Tree
 }
 
 func (vu *VuFs) Chatty(b bool) {
@@ -232,7 +233,6 @@ func dir2Dir(s string, d os.FileInfo, upool p.Users) (*p.Dir, error) {
 	}
 	dir := new(p.Dir)
 	dir.Qid = *dir2Qid(d)
-
 
 	dir.Atime = uint32(atime(sysMode).Unix())
 	dir.Mtime = uint32(d.ModTime().Unix())
@@ -897,11 +897,11 @@ func (vu *VuFs) rattach(r *ConnFcall) {
 		vu.rerror(r)
 	}
 
-	if _, inuse := r.conn.usedfid[r.fc.Fid]; inuse {
-		r.emsg = "already in use"
+	if _, inuse := r.conn.fids[r.fc.Fid]; inuse {
+		r.emsg = "fid already in use on this connection"
 		vu.rerror(r)
 	}
-	r.conn.usedfid[r.fc.Fid] = true
+	r.conn.fids[r.fc.Fid] = vu.tree.root
 
 	rc := &Fcall{Type: Rattach, Qid: vu.tree.root.info.Qid}
 	vu.chat("-> " + rc.String())
@@ -929,11 +929,11 @@ func (vu *VuFs) fcallhandler() {
 			}
 		} else {
 			vu.chat("fcallchan closed")
+			vu.fcallchanDone <- true
 			return
 		}
 	}
 }
-
 
 // Read file system call from connection and push (serialize)
 // onto our one file system call channel.
@@ -952,7 +952,6 @@ func (c *Conn) recv() {
 	c.srv.chat("recv() done")
 }
 
-
 // Add connection to connection list and spawn a go routine
 // to process messages received on the new connection.
 func (vu *VuFs) connhandler() {
@@ -960,7 +959,7 @@ func (vu *VuFs) connhandler() {
 		vu.chat("connhandler")
 		conn, more := <-vu.connchan
 		if more {
-			c := &Conn{rwc: conn, srv: vu, usedfid: make(map[uint32]bool)}
+			c := &Conn{rwc: conn, srv: vu, fids: make(map[uint32]*File)}
 			vu.connections = append(vu.connections, c)
 			go c.recv()
 		} else {
@@ -986,7 +985,7 @@ func (vu *VuFs) listen() error {
 		vu.chat("error!")
 	}
 	vu.chat("stop listening for connections")
-	vu.done <- true
+	vu.connchanDone <- true
 	return nil
 }
 
@@ -1012,7 +1011,7 @@ func (vu *VuFs) Start(ntype, addr string) error {
 	return nil
 }
 
-// Stop listening, do other clean up and shut down.
+// Stop listening, drain channels, wait for started work to finish, and shut down.
 func (vu *VuFs) Stop() {
 	vu.Lock()
 	defer vu.Unlock()
@@ -1031,7 +1030,8 @@ func (vu *VuFs) Stop() {
 		c.rwc.Close()
 	}
 	vu.listener.Close()
-	<-vu.done
+	<-vu.connchanDone
+	<- vu.fcallchanDone
 }
 
 func (f *File) init(path string) error {
@@ -1098,7 +1098,8 @@ func New(root string) *VuFs {
 	vu.Root = root
 	vu.connchan = make(chan net.Conn)
 	vu.fcallchan = make(chan *ConnFcall)
-	vu.done =make(chan bool)
+	vu.connchanDone = make(chan bool)
+	vu.fcallchanDone = make(chan bool)
 
 	fcallhandlers = map[uint8]func(*ConnFcall){
 		Tversion: vu.rversion,
