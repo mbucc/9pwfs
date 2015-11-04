@@ -18,7 +18,6 @@ import (
 	"github.com/lionkov/go9p/p/srv"
 )
 
-const uidgidFile = ".uidgid"
 
 type Fid struct {
 	path string
@@ -175,7 +174,7 @@ func path2UserGroup(path string, upool p.Users) (string, string, error) {
 	dn := filepath.Dir(path)
 	fn := filepath.Base(path)
 
-	data, err := ioutil.ReadFile(filepath.Join(dn, uidgidFile))
+	data, err := ioutil.ReadFile(filepath.Join(dn, "uidgidFile"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return user, group, nil
@@ -455,7 +454,7 @@ func chown(dir, file string, uid, gid int, fid *srv.Fid) error {
 	fid.Lock()
 	defer fid.Unlock()
 
-	fn0 := dir + "/" + uidgidFile
+	fn0 := dir + "/" + "uidgidFile"
 	//fn1 := fn0 + ".tmp"
 
 	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
@@ -497,7 +496,7 @@ func chown(dir, file string, uid, gid int, fid *srv.Fid) error {
 
 func addUidGid(dir, file string, uid, gid int) error {
 
-	fn0 := dir + "/" + uidgidFile
+	fn0 := dir + "/" + "uidgidFile"
 	//fn1 := fn0 + ".tmp"
 
 	fp0, err := os.OpenFile(fn0, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
@@ -721,23 +720,6 @@ func (*VuFs) Remove(req *srv.Req) {
 	req.RespondRremove()
 }
 
-func (*VuFs) Stat(req *srv.Req) {
-	fid := req.Fid.Aux.(*Fid)
-	st, err := os.Stat(fid.path)
-
-	if err != nil {
-		req.RespondError(toError(err))
-		return
-	}
-
-	dir, err := dir2Dir(fid.path, st, req.Conn.Srv.Upool)
-	if err != nil {
-		req.RespondError(err)
-		return
-	}
-	req.RespondRstat(dir)
-}
-
 func (u *VuFs) Wstat(req *srv.Req) {
 	fid := req.Fid.Aux.(*Fid)
 	_, err := os.Stat(fid.path)
@@ -915,6 +897,26 @@ func (vu *VuFs) rauth(r *ConnFcall) {
 	vu.rerror(r)
 }
 
+// Response to Stat message.
+func (vu *VuFs) rstat(r *ConnFcall) {
+	var err error
+
+	vu.chat("<- " + r.fc.String())
+	if file, found := r.conn.fids[r.fc.Fid]; found {
+		rc := &Fcall{Type: Rstat}
+		rc.Stat, err = file.info.Bytes()
+		if err != nil {
+			r.emsg = "stat: " + err.Error()
+			vu.rerror(r)
+		} else {
+			WriteFcall(r.conn.rwc, rc)
+		}
+	} else {
+		r.emsg = "fid not found"
+		vu.rerror(r)
+	}
+}
+
 // Read file system calls off channel one-by-one.
 func (vu *VuFs) fcallhandler() {
 	for {
@@ -1011,7 +1013,7 @@ func (vu *VuFs) Start(ntype, addr string) error {
 	return nil
 }
 
-// Stop listening, drain channels, wait for started work to finish, and shut down.
+// Stop listening, drain channels, wait any in-progress work to finish, and shut down.
 func (vu *VuFs) Stop() {
 	vu.Lock()
 	defer vu.Unlock()
@@ -1105,6 +1107,7 @@ func New(root string) *VuFs {
 		Tversion: vu.rversion,
 		Tattach:  vu.rattach,
 		Tauth:    vu.rauth,
+		Tstat:    vu.rstat,
 	}
 
 	return vu

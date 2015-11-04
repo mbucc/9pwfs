@@ -67,6 +67,18 @@ attach
   [] If it does, auth returns aqid which is used to communicate credentials.
 	--> authentication not supported
 
+stat
+  [] stat requires no special permissions.
+  [] last change in content does not include changes by wstat messages
+  [] file: mtime = most recent create, open with trunc, or write
+  [] dir: mtime = most recent remove, create, or wstat of file in dir.
+  [] file: atime = max(most recent read, mtime)
+  [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
+  [] muid = user that most recently changed the mtime
+  [] directories, by convention, have a length of zero
+  [] stat response is limited to 65535 bytes
+
+
 create
   [] Creating a file takes owner of request and group of directory.
   [] Creating a file requires write perm on directory.
@@ -99,8 +111,6 @@ flush
   * ... and more details.
 
 
-
-
 read
   [] fid must be opened for reading.
   [] if offset > file size, a count of zero bytes read is returned
@@ -118,16 +128,7 @@ remove
   [] plan9 removes file immediately, even if open by other clients.
   * unix typically let's other fids remain usable.
 
-stat
-  [] stat requires no special permissions.
-  [] last change in content does not include changes by wstat messages
-  [] file: mtime = most recent create, open with trunc, or write
-  [] dir: mtime = most recent remove, create, or wstat of file in dir.
-  [] file: atime = max(most recent read, mtime)
-  [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
-  [] muid = user that most recently changed the mtime
-  [] directories, by convention, have a length of zero
-  * stat response is limited to 65535 bytes
+
 
 wstat
   [] name can be changed by anyone with write permission in directory

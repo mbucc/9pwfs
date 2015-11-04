@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func setup_stat_test(t *testing.T) (*vufs.VuFs, net.Conn, fid int) {
+func setup_stat_test(t *testing.T, fid uint32) (*vufs.VuFs, net.Conn) {
 
 	fs := vufs.New(".")
 	err := fs.Start("tcp", vufs.DEFAULTPORT)
@@ -50,19 +50,19 @@ func setup_stat_test(t *testing.T) (*vufs.VuFs, net.Conn, fid int) {
 		return nil, nil
 	}
 
-	tx := &vufs.Fcall{
+	tx = &vufs.Fcall{
 		Type:    vufs.Tattach,
 		Fid: fid,
 		Tag:     1,
 		Afid: vufs.NOFID,
 		Uname: "mark",
 		Aname: "/"}
-	err := vufs.WriteFcall(c, tx)
+	err = vufs.WriteFcall(c, tx)
 	if err != nil {
 		t.Fatalf("Tattach write failed: %v", err)
 	}
 
-	rx, err := vufs.ReadFcall(c)
+	rx, err = vufs.ReadFcall(c)
 	if err != nil {
 		t.Errorf("Rattach read failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func setup_stat_test(t *testing.T) (*vufs.VuFs, net.Conn, fid int) {
 
 func TestStat(t *testing.T) {
 
-	fid := 1
+	fid := uint32(1)
 	fs, c := setup_stat_test(t, fid)
 	if fs == nil || c == nil {
 		return
@@ -86,5 +86,20 @@ func TestStat(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
+	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: fid, Tag: 1}
+	err := vufs.WriteFcall(c, tx)
+	if err != nil {
+		t.Fatalf("Tstat write failed: %v", err)
+	}
 
+	rx, err := vufs.ReadFcall(c)
+	if err != nil {
+		t.Errorf("Rstat read failed: %v", err)
+	}
+	if rx.Type == vufs.Rerror {
+		t.Fatalf("attach returned error: '%s'", rx.Ename)
+	}
+	if rx.Type != vufs.Rstat {
+		t.Errorf("bad message type, expected %d got %d", vufs.Rstat, rx.Type)
+	}
 }
