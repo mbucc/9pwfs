@@ -837,30 +837,14 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
-func (c *Conn) recv() {
-	for !c.dying {
-		fc, err := ReadFcall(c.rwc)
-		if err == nil {
-			c.srv.fcallchan <- &ConnFcall{c, fc, ""}
-		} else {
-			if !c.dying {
-				c.srv.chat("recv() error: " + err.Error())
-			}
-			continue
-		}
-	}
-	c.srv.chat("recv() done")
-}
-
-func (c *Conn) hasfid(fid int) {
-}
-
+// Respond with an error.
 func (vu *VuFs) rerror(r *ConnFcall) {
 	rc := &Fcall{Type: Rerror, Msize: r.fc.Msize, Ename: r.emsg}
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }
 
+// Respond to Version message.
 func (vu *VuFs) rversion(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 
@@ -897,6 +881,7 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 	WriteFcall(r.conn.rwc, rc)
 }
 
+// Respond to Attach message.
 func (vu *VuFs) rattach(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 
@@ -923,13 +908,14 @@ func (vu *VuFs) rattach(r *ConnFcall) {
 	WriteFcall(r.conn.rwc, rc)
 }
 
+// Response to Auth message.
 func (vu *VuFs) rauth(r *ConnFcall) {
 	vu.chat("<- " + r.fc.String())
 	r.emsg = "not supported"
 	vu.rerror(r)
 }
 
-// Serialize all transaction requests.  (Fan-in channel.)
+// Read file system calls off channel one-by-one.
 func (vu *VuFs) fcallhandler() {
 	for {
 		x, more := <-vu.fcallchan
@@ -948,6 +934,27 @@ func (vu *VuFs) fcallhandler() {
 	}
 }
 
+
+// Read file system call from connection and push (serialize)
+// onto our one file system call channel.
+func (c *Conn) recv() {
+	for !c.dying {
+		fc, err := ReadFcall(c.rwc)
+		if err == nil {
+			c.srv.fcallchan <- &ConnFcall{c, fc, ""}
+		} else {
+			if !c.dying {
+				c.srv.chat("recv() error: " + err.Error())
+			}
+			continue
+		}
+	}
+	c.srv.chat("recv() done")
+}
+
+
+// Add connection to connection list and spawn a go routine
+// to process messages received on the new connection.
 func (vu *VuFs) connhandler() {
 	for {
 		vu.chat("connhandler")
@@ -963,6 +970,7 @@ func (vu *VuFs) connhandler() {
 	}
 }
 
+// Serialize connection requests by fanning-in to one channel.
 func (vu *VuFs) listen() error {
 	var err error
 	vu.chat("start listening for connections")

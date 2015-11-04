@@ -67,8 +67,7 @@ func TestUnknownVersion(t *testing.T) {
 	}
 }
 
-
-
+// If 9P2000.<something>, server replies 9P2000.
 func TestVersionExtension(t *testing.T) {
 
 	fs := vufs.New(".")
@@ -105,7 +104,7 @@ func TestVersionExtension(t *testing.T) {
 	}
 }
 
-
+// If client sends a huge message size, we clamp to max allowed by server.
 func TestBigMessageSizeClamped(t *testing.T) {
 
 	fs := vufs.New(".")
@@ -139,5 +138,41 @@ func TestBigMessageSizeClamped(t *testing.T) {
 		t.Errorf("bad msize, expected %d got %d", vufs.MAX_MSIZE, rx.Msize)
 	}
 }
+
+// If client sends a tiny message size, that's what we use.
+func TestTinyMessageSizeUsed(t *testing.T) {
+
+	fs := vufs.New(".")
+	err := fs.Start("tcp", vufs.DEFAULTPORT)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer fs.Stop()
+
+	c, err := net.Dial("tcp", vufs.DEFAULTPORT)
+	if err != nil {
+		t.Errorf("connection failed: %v", err)
+	}
+	defer c.Close()
+
+	tx := &vufs.Fcall{
+		Type:    vufs.Tversion,
+		Tag:     vufs.NOTAG,
+		Msize:   50,
+		Version: vufs.VERSION9P}
+	err = vufs.WriteFcall(c, tx)
+	if err != nil {
+		t.Errorf("connection write failed: %v", err)
+	}
+	rx, err := vufs.ReadFcall(c)
+	if err != nil {
+		t.Errorf("connection read failed: %v", err)
+	}
+
+	if rx.Msize != 50 {
+		t.Errorf("bad msize, expected %d got %d", vufs.MAX_MSIZE, rx.Msize)
+	}
+}
+
 
 
