@@ -1036,23 +1036,23 @@ func (vu *VuFs) Stop() {
 	<- vu.fcallchanDone
 }
 
-func (f *File) init(path string) error {
+func (f *File) init(rootdir string) error {
 
-	info, err := os.Stat(path)
+	info, err := os.Stat(rootdir)
 	if err != nil {
 		return err
 	}
 
 	sysif := info.Sys()
 	if sysif == nil {
-		return fmt.Errorf("no stat datasource for '%s'", path)
+		return fmt.Errorf("no stat datasource for '%s'", rootdir)
 	}
 	var sysMode *syscall.Stat_t
 	switch t := sysif.(type) {
 	case *syscall.Stat_t:
 		sysMode = t
 	default:
-		return fmt.Errorf("stat datasource is not a Stat_t for '%s'", path)
+		return fmt.Errorf("stat datasource is not a Stat_t for '%s'", rootdir)
 	}
 	stat := sysif.(*syscall.Stat_t)
 
@@ -1063,19 +1063,21 @@ func (f *File) init(path string) error {
 	dir.Qid.Vers = uint32(info.ModTime().UnixNano() / 1000000)
 	dir.Mode = Perm(info.Mode() & 0777)
 
-	if info.IsDir() {
-		dir.Mode |= p.DMDIR
-		dir.Qid.Vers |= p.QTDIR
-	}
-
 	dir.Atime = uint32(atime(sysMode).Unix())
 	dir.Mtime = uint32(info.ModTime().Unix())
 	dir.Length = uint64(info.Size())
-	dir.Name = path[strings.LastIndex(path, "/")+1:]
+	dir.Name = "/" // rootdir[strings.LastIndex(rootdir, "/")+1:]
 
-	// BUG(mbucc) uid and gid are stubbed in file init().
-	dir.Uid = "stubbed"
-	dir.Gid = "stubbed"
+	if info.IsDir() {
+		dir.Mode |= p.DMDIR
+		dir.Qid.Vers |= p.QTDIR
+		dir.Length = 0
+	}
+
+	dir.Uid = DEFAULT_USER
+	dir.Gid = DEFAULT_USER
+	dir.Muid = DEFAULT_USER
+
 
 	f.info = dir
 

@@ -97,4 +97,5 @@ const (
 
 	DEFAULTPORT = ":5001"
 	MAX_MSIZE = 131072
+	DEFAULT_USER = "adm"
 )

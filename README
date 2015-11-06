@@ -68,14 +68,14 @@ attach
 	--> authentication not supported
 
 stat
-  [] stat requires no special permissions.
+  [x] stat requires no special permissions.
   [] last change in content does not include changes by wstat messages
   [] file: mtime = most recent create, open with trunc, or write
   [] dir: mtime = most recent remove, create, or wstat of file in dir.
   [] file: atime = max(most recent read, mtime)
   [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
   [] muid = user that most recently changed the mtime
-  [] directories, by convention, have a length of zero
+  [x] directories, by convention, have a length of zero
   [] stat response is limited to 65535 bytes
 
 

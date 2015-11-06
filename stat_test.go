@@ -6,14 +6,16 @@ package vufs_test
 
 import (
 	"github.com/mbucc/vufs"
+	"io/ioutil"
 
 	"net"
+	"os"
 	"testing"
 )
 
-func setup_stat_test(t *testing.T, fid uint32) (*vufs.VuFs, net.Conn) {
+func setup_stat_test(t *testing.T, fid uint32, rootdir string) (*vufs.VuFs, net.Conn) {
 
-	fs := vufs.New(".")
+	fs := vufs.New(rootdir)
 	err := fs.Start("tcp", vufs.DEFAULTPORT)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
@@ -51,10 +53,10 @@ func setup_stat_test(t *testing.T, fid uint32) (*vufs.VuFs, net.Conn) {
 	}
 
 	tx = &vufs.Fcall{
-		Type:    vufs.Tattach,
-		Fid: fid,
-		Tag:     1,
-		Afid: vufs.NOFID,
+		Type:  vufs.Tattach,
+		Fid:   fid,
+		Tag:   1,
+		Afid:  vufs.NOFID,
 		Uname: "mark",
 		Aname: "/"}
 	err = vufs.WriteFcall(c, tx)
@@ -78,8 +80,14 @@ func setup_stat_test(t *testing.T, fid uint32) (*vufs.VuFs, net.Conn) {
 
 func TestStat(t *testing.T) {
 
+	rootdir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(rootdir)
+
 	fid := uint32(1)
-	fs, c := setup_stat_test(t, fid)
+	fs, c := setup_stat_test(t, fid, rootdir)
 	if fs == nil || c == nil {
 		return
 	}
@@ -87,7 +95,7 @@ func TestStat(t *testing.T) {
 	defer c.Close()
 
 	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: fid, Tag: 1}
-	err := vufs.WriteFcall(c, tx)
+	err = vufs.WriteFcall(c, tx)
 	if err != nil {
 		t.Fatalf("Tstat write failed: %v", err)
 	}
@@ -102,4 +110,32 @@ func TestStat(t *testing.T) {
 	if rx.Type != vufs.Rstat {
 		t.Errorf("bad message type, expected %d got %d", vufs.Rstat, rx.Type)
 	}
+
+	dir, err := vufs.UnmarshalDir(rx.Stat)
+	if err != nil {
+		t.Fatalf("UnmarshalDir failed: %v", rx.Ename)
+	}
+	if dir.Name != "/" {
+		t.Errorf("wrong Name, expected '%s', got '%s'", "/", dir.Name)
+	}
+
+	if dir.Length != 0 {
+		t.Errorf("directories, by convention, should have length 0")
+	}
+
+	if dir.Uid != vufs.DEFAULT_USER {
+		t.Errorf("a new root directory should be owned by '%s', not '%s'",
+			vufs.DEFAULT_USER, dir.Uid)
+	}
+
+	if dir.Gid != vufs.DEFAULT_USER {
+		t.Errorf("a new root directory should have group by '%s', not '%s'",
+			vufs.DEFAULT_USER, dir.Gid)
+	}
+
+	if dir.Gid != vufs.DEFAULT_USER {
+		t.Errorf("a new root directory should have last modified user of '%s', not '%s'",
+			vufs.DEFAULT_USER, dir.Muid)
+	}
+
 }
