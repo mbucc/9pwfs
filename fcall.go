@@ -76,11 +76,6 @@ type Fcall struct {
 	Count   uint32   // Tread, Rwrite
 	Data    []byte   // Twrite, Rread
 	Stat    []byte   // Twstat, Rstat
-
-	// 9P2000.u extensions
-	Errno     uint32 // Rerror
-	Uid       uint32 // Tattach, Tauth
-	Extension string // Tcreate
 }
 
 const (
@@ -457,6 +452,33 @@ func (f *Fcall) String() string {
 	}
 	return fmt.Sprintf("unknown type %d", f.Type)
 }
+
+func (f *Fcall) Reset() {
+	f.Type = 0
+	f.Fid  = 0
+	f.Tag     = 0
+	f.Msize   = 0
+	f.Version = ""
+	f.Oldtag  = 0
+	f.Ename   = ""
+	f.Qid.Reset()
+	f.Iounit  = 0
+	f.Aqid.Reset()
+	f.Afid    = 0
+	f.Uname   = ""
+	f.Aname   = ""
+	f.Perm  =  Perm(0)
+	f.Name    = ""
+	f.Mode    = 0
+	f.Newfid  = 0
+	f.Wname  = make([]string, 0, 0)
+	f.Wqid   = make([]Qid, 0, 0)
+	f.Offset  = 0
+	f.Count   = 0
+	f.Data   =make([]byte, 0, 0)
+	f.Stat = make([]byte, 0, 0)
+}
+
 
 func ReadFcall(r io.Reader) (*Fcall, error) {
 	// 128 bytes should be enough for most messages

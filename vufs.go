@@ -18,7 +18,6 @@ import (
 	"github.com/lionkov/go9p/p/srv"
 )
 
-
 type Fid struct {
 	path string
 	file *os.File
@@ -819,9 +818,17 @@ func (u *VuFs) Wstat(req *srv.Req) {
 	req.RespondRwstat()
 }
 
+// Since we serialize all file operations, we can reuse the same response memory.
+//
+// TODO(mbucc) We could also stop allocating memory on message receipt too.
+var rc *Fcall = new(Fcall)
+
 // Respond with an error.
 func (vu *VuFs) rerror(r *ConnFcall) {
-	rc := &Fcall{Type: Rerror, Msize: r.fc.Msize, Ename: r.emsg}
+	rc.Reset()
+	rc.Type = Rerror
+	rc.Msize = r.fc.Msize
+	rc.Ename = r.emsg
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }
@@ -858,7 +865,10 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 		}
 	}
 
-	rc := &Fcall{Type: Rversion, Msize: msz, Version: ver}
+	rc.Reset()
+	rc.Type = Rversion
+	rc.Msize = msz
+	rc.Version = ver
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }
@@ -885,7 +895,9 @@ func (vu *VuFs) rattach(r *ConnFcall) {
 	}
 	r.conn.fids[r.fc.Fid] = vu.tree.root
 
-	rc := &Fcall{Type: Rattach, Qid: vu.tree.root.info.Qid}
+	rc.Reset()
+	rc.Type = Rattach
+	rc.Qid = vu.tree.root.info.Qid // value, not pointer
 	vu.chat("-> " + rc.String())
 	WriteFcall(r.conn.rwc, rc)
 }
@@ -902,19 +914,42 @@ func (vu *VuFs) rstat(r *ConnFcall) {
 	var err error
 
 	vu.chat("<- " + r.fc.String())
-	if file, found := r.conn.fids[r.fc.Fid]; found {
-		rc := &Fcall{Type: Rstat}
-		rc.Stat, err = file.info.Bytes()
-		if err != nil {
-			r.emsg = "stat: " + err.Error()
-			vu.rerror(r)
-		} else {
-			WriteFcall(r.conn.rwc, rc)
-		}
-	} else {
+	file, found := r.conn.fids[r.fc.Fid]
+	if !found {
 		r.emsg = "fid not found"
 		vu.rerror(r)
 	}
+	rc.Reset()
+	rc.Type = Rstat
+	rc.Stat, err = file.info.Bytes()
+	if err != nil {
+		r.emsg = "stat: " + err.Error()
+		vu.rerror(r)
+	}
+	WriteFcall(r.conn.rwc, rc)
+}
+
+// Response to Create message.
+func (vu *VuFs) rcreate(r *ConnFcall) {
+
+	vu.chat("<- " + r.fc.String())
+	file, found := r.conn.fids[r.fc.Fid]
+	if !found {
+		r.emsg = "fid not found"
+		vu.rerror(r)
+	}
+
+	if file.info.Qid.Type&QTDIR == 0 {
+		r.emsg = "can only create in a directory"
+		vu.rerror(r)
+	}
+
+	rc.Reset()
+	rc.Type = Rcreate
+	rc.Fid = r.fc.Fid
+	vu.chat("-> " + rc.String())
+	WriteFcall(r.conn.rwc, rc)
+
 }
 
 // Read file system calls off channel one-by-one.
@@ -1033,7 +1068,7 @@ func (vu *VuFs) Stop() {
 	}
 	vu.listener.Close()
 	<-vu.connchanDone
-	<- vu.fcallchanDone
+	<-vu.fcallchanDone
 }
 
 func (f *File) init(rootdir string) error {
@@ -1078,7 +1113,6 @@ func (f *File) init(rootdir string) error {
 	dir.Gid = DEFAULT_USER
 	dir.Muid = DEFAULT_USER
 
-
 	f.info = dir
 
 	return nil
@@ -1110,6 +1144,7 @@ func New(root string) *VuFs {
 		Tattach:  vu.rattach,
 		Tauth:    vu.rauth,
 		Tstat:    vu.rstat,
+		Tcreate:  vu.rcreate,
 	}
 
 	return vu

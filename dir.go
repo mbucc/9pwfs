@@ -256,6 +256,12 @@ func (q Qid) String() string {
 	return fmt.Sprintf("(%.16x %d %s)", q.Path, q.Vers, t)
 }
 
+func (q Qid) Reset() {
+	q.Path = 0
+	q.Vers = 0
+	q.Type = 0
+}
+
 func gqid(b []byte) (Qid, []byte) {
 	var q Qid
 	q.Type, b = gbit8(b)
