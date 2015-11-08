@@ -18,6 +18,7 @@ import (
 	"github.com/lionkov/go9p/p/srv"
 )
 
+// A Fid is a pointer to a file (a handle) and is unique per connection.
 type Fid struct {
 	path string
 	file *os.File
@@ -30,17 +31,24 @@ type Conn struct {
 	fids  map[uint32]*File
 }
 
+// A ConnFcall combines a file system call and it's connection.
+// The file call handlers need both, as fid's are by connection and
+// files are by file system.
 type ConnFcall struct {
 	conn *Conn
 	fc   *Fcall
 	emsg string
 }
 
+// A File represents a file in the file system, and is unique across the file server.
+// Multiple connections may have a handle to the same File.
 type File struct {
 	info *Dir
-	list []File
+	// TODO(mbucc) Load list when File is a directory.
+	list []*File
 }
 
+// A Tree is an in-memory representation of the entire File structure.
 type Tree struct {
 	root *File
 }
@@ -67,6 +75,20 @@ func (vu *VuFs) chat(msg string) {
 	if vu.chatty {
 		fmt.Println("vufs: " + msg)
 	}
+}
+
+// BUG(mbucc) Many. Not handling directories, ignoring Perm bits to name two.
+func NewFile(path string, flag uint8, mode Perm)  (*File, error) {
+
+	_, err := os.OpenFile(path, os.O_CREATE, os.FileMode(mode & 0777))
+	if err != nil {
+		return nil, err
+	}
+
+	// dir.go:60,72
+
+	return nil, nil
+
 }
 
 func toError(err error) *p.Error {
@@ -823,19 +845,8 @@ func (u *VuFs) Wstat(req *srv.Req) {
 // TODO(mbucc) We could also stop allocating memory on message receipt too.
 var rc *Fcall = new(Fcall)
 
-// Respond with an error.
-func (vu *VuFs) rerror(r *ConnFcall) {
-	rc.Reset()
-	rc.Type = Rerror
-	rc.Msize = r.fc.Msize
-	rc.Ename = r.emsg
-	vu.chat("-> " + rc.String())
-	WriteFcall(r.conn.rwc, rc)
-}
-
 // Respond to Version message.
-func (vu *VuFs) rversion(r *ConnFcall) {
-	vu.chat("<- " + r.fc.String())
+func (vu *VuFs) rversion(r *ConnFcall) string {
 
 	// We only support 9P2000.
 	ver := r.fc.Version
@@ -857,9 +868,8 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 	done := false
 	for ver != "unknown" && !done {
 		select {
-		case x := <-vu.fcallchan:
-			x.emsg = "new session started, dropping this pending request"
-			vu.rerror(x)
+		case  <-vu.fcallchan:
+			return "new session started, dropping this request"
 		default:
 			done = true
 		}
@@ -869,101 +879,122 @@ func (vu *VuFs) rversion(r *ConnFcall) {
 	rc.Type = Rversion
 	rc.Msize = msz
 	rc.Version = ver
-	vu.chat("-> " + rc.String())
-	WriteFcall(r.conn.rwc, rc)
+	return ""
 }
 
 // Respond to Attach message.
-func (vu *VuFs) rattach(r *ConnFcall) {
+func (vu *VuFs) rattach(r *ConnFcall) string {
 	vu.chat("<- " + r.fc.String())
 
 	// To simplify dot-dot logic in walk, we  only allow attaches to root.
 	if r.fc.Aname != "/" {
-		r.emsg = "can only attach to root directory"
-		vu.rerror(r)
+		return "can only attach to root directory"
 	}
 
 	// We don't support authentication.
 	if r.fc.Afid != NOFID {
-		r.emsg = "authentication not supported"
-		vu.rerror(r)
+		return "authentication not supported"
 	}
 
 	if _, inuse := r.conn.fids[r.fc.Fid]; inuse {
-		r.emsg = "fid already in use on this connection"
-		vu.rerror(r)
+		return  "fid already in use on this connection"
 	}
 	r.conn.fids[r.fc.Fid] = vu.tree.root
 
 	rc.Reset()
 	rc.Type = Rattach
 	rc.Qid = vu.tree.root.info.Qid // value, not pointer
-	vu.chat("-> " + rc.String())
-	WriteFcall(r.conn.rwc, rc)
+	rc.Tag = r.fc.Tag
+	return ""
 }
 
 // Response to Auth message.
-func (vu *VuFs) rauth(r *ConnFcall) {
-	vu.chat("<- " + r.fc.String())
-	r.emsg = "not supported"
-	vu.rerror(r)
+func (vu *VuFs) rauth(r *ConnFcall) string {
+	return "not supported"
 }
 
 // Response to Stat message.
-func (vu *VuFs) rstat(r *ConnFcall) {
+func (vu *VuFs) rstat(r *ConnFcall) string {
 	var err error
 
-	vu.chat("<- " + r.fc.String())
 	file, found := r.conn.fids[r.fc.Fid]
 	if !found {
-		r.emsg = "fid not found"
-		vu.rerror(r)
+		return "fid not found"
 	}
 	rc.Reset()
 	rc.Type = Rstat
+	rc.Tag = r.fc.Tag
 	rc.Stat, err = file.info.Bytes()
 	if err != nil {
-		r.emsg = "stat: " + err.Error()
-		vu.rerror(r)
+		return "stat: " + err.Error()
 	}
-	WriteFcall(r.conn.rwc, rc)
+	return ""
 }
 
 // Response to Create message.
-func (vu *VuFs) rcreate(r *ConnFcall) {
+func (vu *VuFs) rcreate(r *ConnFcall) string {
 
-	vu.chat("<- " + r.fc.String())
-	file, found := r.conn.fids[r.fc.Fid]
+	// Make sure parent file is a directory.
+	parent, found := r.conn.fids[r.fc.Fid]
 	if !found {
-		r.emsg = "fid not found"
-		vu.rerror(r)
+		return  "fid not found"
+	}
+	if parent.info.Qid.Type&QTDIR == 0 {
+		return parent.info.Name + " is not a directory"
 	}
 
-	if file.info.Qid.Type&QTDIR == 0 {
-		r.emsg = "can only create in a directory"
-		vu.rerror(r)
+	// Make sure file name is valid
+	// fcall.go:55,79
+	if r.fc.Name == "." || r.fc.Name == ".." {
+		return r.fc.Name + " invalid name"
 	}
+	// BUG(mbucc) No check on what characters are used in new filename.
+	// See https://en.wikipedia.org/wiki/Filename
 
 	rc.Reset()
 	rc.Type = Rcreate
 	rc.Fid = r.fc.Fid
-	vu.chat("-> " + rc.String())
-	WriteFcall(r.conn.rwc, rc)
+	rc.Tag = r.fc.Tag
 
+	path := parent.info.Name + "/" + r.fc.Name
+	f, err := NewFile(path, r.fc.Mode, r.fc.Perm)
+	if err != nil {
+		return path + ": " + err.Error()
+	}
+
+
+	parent.list = append(parent.list, f)
+	return ""
 }
 
 // Read file system calls off channel one-by-one.
 func (vu *VuFs) fcallhandler() {
-	for {
+	var emsg string
+	for !vu.dying {
 		x, more := <-vu.fcallchan
 		if more {
-			if f, ok := fcallhandlers[x.fc.Type]; ok {
-				f(x)
+			emsg = ""
+			rc.Reset()
+			vu.chat("<- " + x.fc.String())
+
+			// https://github.com/0intro/plan9/blob/7524062cfa4689019a4ed6fc22500ec209522ef0/sys/src/cmd/ip/ftpfs/ftpfs.c#L277-L288
+
+			f, ok := fcallhandlers[x.fc.Type]
+			if !ok {
+				emsg = "bad fcall type"
 			} else {
-				vu.chat(string(x.fc.Type) + "was not found")
-				x.emsg = "not implemented"
-				vu.rerror(x)
+				emsg = f(x)
 			}
+			if emsg != "" {
+				rc.Type = Rerror
+				rc.Ename = emsg
+			} else {
+				rc.Type = x.fc.Type + 1;
+				rc.Fid = x.fc.Fid;
+			}
+			rc.Tag = x.fc.Tag
+			vu.chat("-> " + rc.String())
+			WriteFcall(x.conn.rwc, rc)
 		} else {
 			vu.chat("fcallchan closed")
 			vu.fcallchanDone <- true
@@ -1058,8 +1089,11 @@ func (vu *VuFs) Stop() {
 
 	close(vu.fcallchan)
 	for x := range vu.fcallchan {
-		x.emsg = "file system stopped"
-		vu.rerror(x)
+		rc.Ename = "file system stopped"
+		rc.Tag = x.fc.Tag
+		rc.Type = Rerror
+		vu.chat("-> " + rc.String())
+		WriteFcall(x.conn.rwc, rc)
 	}
 
 	for _, c := range vu.connections {
@@ -1128,7 +1162,7 @@ func (vu *VuFs) buildtree() error {
 	return nil
 }
 
-var fcallhandlers map[uint8]func(*ConnFcall)
+var fcallhandlers map[uint8]func(*ConnFcall) string
 
 func New(root string) *VuFs {
 
@@ -1139,7 +1173,7 @@ func New(root string) *VuFs {
 	vu.connchanDone = make(chan bool)
 	vu.fcallchanDone = make(chan bool)
 
-	fcallhandlers = map[uint8]func(*ConnFcall){
+	fcallhandlers = map[uint8](func(*ConnFcall) string) {
 		Tversion: vu.rversion,
 		Tattach:  vu.rattach,
 		Tauth:    vu.rauth,

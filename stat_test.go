@@ -111,6 +111,11 @@ func TestStat(t *testing.T) {
 		t.Errorf("bad message type, expected %d got %d", vufs.Rstat, rx.Type)
 	}
 
+	// Tag must be the same
+	if rx.Tag != tx.Tag {
+		t.Errorf("wrong tag, expected %d got %d", tx.Tag, rx.Tag)
+	}
+
 	dir, err := vufs.UnmarshalDir(rx.Stat)
 	if err != nil {
 		t.Fatalf("UnmarshalDir failed: %v", rx.Ename)

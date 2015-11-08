@@ -85,4 +85,8 @@ func TestAttach(t *testing.T) {
 	if rx.Type != vufs.Rattach {
 		t.Errorf("bad message type, expected %d got %d", vufs.Rattach, rx.Type)
 	}
+	// Tag must be the same
+	if rx.Tag != tx.Tag {
+		t.Errorf("wrong tag, expected %d got %d", tx.Tag, rx.Tag)
+	}
 }
