@@ -68,6 +68,7 @@ type Fcall struct {
 	Aname   string   // Tauth, Tattach
 	Perm    Perm     // Tcreate
 	Name    string   // Tcreate
+	// Type of input/output (for example, O_READ).
 	Mode    uint8    // Tcreate, Topen
 	Newfid  uint32   // Twalk
 	Wname   []string // Twalk

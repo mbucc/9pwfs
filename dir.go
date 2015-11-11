@@ -236,6 +236,8 @@ func pperm(b []byte, p Perm) []byte {
 type Qid struct {
 	Path uint64
 	Vers uint32
+	// The type of the file, represented as a bit vector corresponding
+         // to the high 8 bits of the file's mode word.
 	Type uint8
 }
 
