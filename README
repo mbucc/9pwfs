@@ -35,7 +35,7 @@ http://plan9.bell-labs.com/sys/man/5/INDEX.html
 0intro
   * The tag connects the async response (R-message) to the request (T-message).
   * Every outstanding T-message must have a different tag.
-  * A fid is a handle used by the client to identify a file on the server.
+  * A fid is a handle used by a client to identify a file on the server.
   * The fid-space is scoped to the connection.
   * A connection can be shared by multiple clients.
     (In this case, no two clients should use the same fid.)
@@ -66,6 +66,7 @@ attach
 	--> authentication not supported
   [] If it does, auth returns aqid which is used to communicate credentials.
 	--> authentication not supported
+  [x] Attach identifies the user.
 
 stat
   [x] stat requires no special permissions.
