@@ -398,53 +398,6 @@ func (vu *VuFs) listen() error {
 	return nil
 }
 
-// Start listening for connections.
-func (vu *VuFs) Start(ntype, addr string) error {
-	vu.Lock()
-	defer vu.Unlock()
-
-	vu.chat("start")
-
-	err := vu.buildtree()
-	if err != nil {
-		return err
-	}
-
-	vu.listener, err = net.Listen(ntype, addr)
-	if err != nil {
-		return err
-	}
-	go vu.connhandler()
-	go vu.listen()
-	go vu.fcallhandler()
-	return nil
-}
-
-// Stop listening, drain channels, wait any in-progress work to finish, and shut down.
-func (vu *VuFs) Stop() {
-	vu.Lock()
-	defer vu.Unlock()
-
-	vu.dying = true
-	close(vu.connchan)
-
-	close(vu.fcallchan)
-	for x := range vu.fcallchan {
-		rc.Ename = "file system stopped"
-		rc.Tag = x.fc.Tag
-		rc.Type = Rerror
-		vu.chat("-> " + rc.String())
-		WriteFcall(x.conn.rwc, rc)
-	}
-
-	for _, c := range vu.connections {
-		c.dying = true
-		c.rwc.Close()
-	}
-	vu.listener.Close()
-	<-vu.connchanDone
-	<-vu.fcallchanDone
-}
 
 func info2stat(info os.FileInfo) (*syscall.Stat_t, error) {
 	sysif := info.Sys()
@@ -503,6 +456,56 @@ func (vu *VuFs) buildtree() error {
 	vu.tree = &Tree{root: f}
 	return nil
 }
+
+// Stop listening, drain channels, wait any in-progress work to finish, and shut down.
+func (vu *VuFs) Stop() {
+	vu.Lock()
+	defer vu.Unlock()
+
+	vu.dying = true
+	close(vu.connchan)
+	for _, c := range vu.connections {
+		c.dying = true
+		c.rwc.Close()
+	}
+
+	close(vu.fcallchan)
+	for x := range vu.fcallchan {
+		rc.Ename = "file system stopped"
+		rc.Tag = x.fc.Tag
+		rc.Type = Rerror
+		vu.chat("-> " + rc.String())
+		WriteFcall(x.conn.rwc, rc)
+	}
+
+	vu.listener.Close()
+	<-vu.connchanDone
+	<-vu.fcallchanDone
+}
+
+
+// Start listening for connections.
+func (vu *VuFs) Start(ntype, addr string) error {
+	vu.Lock()
+	defer vu.Unlock()
+
+	vu.chat("start")
+
+	err := vu.buildtree()
+	if err != nil {
+		return err
+	}
+
+	vu.listener, err = net.Listen(ntype, addr)
+	if err != nil {
+		return err
+	}
+	go vu.connhandler()
+	go vu.listen()
+	go vu.fcallhandler()
+	return nil
+}
+
 
 var fcallhandlers map[uint8]func(*ConnFcall) string
 
