@@ -39,8 +39,8 @@ type ConnFcall struct {
 // Multiple connections may have a handle to the same File.
 type File struct {
 	Dir
-	// TODO(mbucc) Load list when File is a directory.
-	list []*File
+	parent *File
+	list   []*File
 }
 
 // A Tree is an in-memory representation of the entire File structure.
@@ -70,6 +70,10 @@ func (vu *VuFs) chat(msg string) {
 	if vu.chatty {
 		fmt.Println("vufs: " + msg)
 	}
+}
+
+func (vu *VuFs) log(msg string) {
+	fmt.Println("vufs: " + msg)
 }
 
 // Golang Flags (not all may be implemented by underlying operating system):
@@ -112,8 +116,6 @@ func openflags(mode uint8, perm Perm) int {
 }
 
 // NewFile creates a new File and then opens it.
-
-
 
 func writeOwnership(path, uid, gid string) error {
 	fn := path + ".vufs"
@@ -245,10 +247,10 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	if r.fc.Perm&QTDIR == 1 && r.fc.Mode&3 != OREAD {
 		return "can only create a directory in read mode"
 	}
-
 	// fcall.go:55,79
 
 	// mode = I/O type, e.g. OREAD.  See const.go:50,61.
+
 	ospath := filepath.Join(vu.Root, parent.Name, r.fc.Name)
 	fsyspath := filepath.Join(parent.Name, r.fc.Name)
 	goflags := openflags(r.fc.Mode, r.fc.Perm) | os.O_CREATE
@@ -266,7 +268,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 
 	info, err := fp.Stat()
 	if err != nil {
-		emsg :=  fsyspath + ": " + err.Error()
+		emsg := fsyspath + ": " + err.Error()
 		err1 := os.Remove(ospath)
 		if err1 != nil {
 			emsg += " (and file was left on disk)"
@@ -275,13 +277,15 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	}
 	stat, err := info2stat(info)
 	if err != nil {
-		emsg :=  fsyspath + ": " + err.Error()
+		emsg := fsyspath + ": " + err.Error()
 		err1 := os.Remove(ospath)
 		if err1 != nil {
 			emsg += " (and file was left on disk)"
 		}
 		return emsg
 	}
+
+
 	// dir.go:60,72
 	f := new(File)
 	f.Qid.Type = QTFILE
@@ -295,9 +299,10 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	f.Uid = uid
 	f.Gid = gid
 	f.Muid = uid
+	f.parent = parent
+	f.parent.list = append(f.parent.list, f)
 
 	r.conn.fids[r.fc.Fid] = &Fid{uid, f}
-	parent.list = append(parent.list, f)
 	rc.Type = Rcreate
 	rc.Qid = f.Qid
 
@@ -398,7 +403,6 @@ func (vu *VuFs) listen() error {
 	return nil
 }
 
-
 func info2stat(info os.FileInfo) (*syscall.Stat_t, error) {
 	sysif := info.Sys()
 	if sysif == nil {
@@ -412,17 +416,16 @@ func info2stat(info os.FileInfo) (*syscall.Stat_t, error) {
 	}
 }
 
-func (f *File) init(rootdir string) error {
+func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 
-	info, err := os.Stat(rootdir)
-	if err != nil {
-		return err
-	}
+	var found bool
+
 	stat, err := info2stat(info)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	f := new(File)
 	f.Null()
 
 	f.Qid.Path = stat.Ino
@@ -432,7 +435,8 @@ func (f *File) init(rootdir string) error {
 	f.Atime = uint32(atime(stat).Unix())
 	f.Mtime = uint32(info.ModTime().Unix())
 	f.Length = uint64(info.Size())
-	f.Name = "/" // rootdir[strings.LastIndex(rootdir, "/")+1:]
+	f.Name = info.Name()
+	f.list = make([]*File, 0)
 
 	if info.IsDir() {
 		f.Mode |= DMDIR
@@ -440,20 +444,67 @@ func (f *File) init(rootdir string) error {
 		f.Length = 0
 	}
 
+	if ospath != vu.Root {
+		parentpath := filepath.Join(ospath, "..")
+		f.parent, found = loadmap[parentpath]
+		if !found {
+			return nil, fmt.Errorf("parent '%s' not in loadmap for '%s'", parentpath, ospath)
+		}
+		f.parent.list = append(f.parent.list, f)
+	} else {
+		f.Name = "/"
+		f.parent = f
+	}
+
+	// BUG(mbucc) Look up [u|g|mu]id from <path>.vufs
 	f.Uid = DEFAULT_USER
 	f.Gid = DEFAULT_USER
 	f.Muid = DEFAULT_USER
 
-	return nil
+	return f, nil
 }
 
-func (vu *VuFs) buildtree() error {
-	f := new(File)
-	err := f.init(vu.Root)
+
+func (vu *VuFs) buildnode(path string, info os.FileInfo, err error) error {
+
 	if err != nil {
 		return err
 	}
-	vu.tree = &Tree{root: f}
+
+	f, err := vu.buildfile(path, info)
+
+	if err != nil {
+		return err
+	}
+	loadmap[path] = f
+
+	return nil
+
+}
+
+var loadmap map[string]*File
+
+func (vu *VuFs) buildtree() error {
+
+	loadmap = make(map[string]*File, 100000)
+	err := filepath.Walk(vu.Root, vu.buildnode)
+	if err != nil {
+		return err
+	}
+	
+	f, found := loadmap[vu.Root]
+	if !found {
+		return fmt.Errorf("didn't load file for root dir '%s'", vu.Root)
+	}
+
+	vu.tree = &Tree{f}
+
+	if len(loadmap) == 1 {
+		vu.log("loaded 1 file")
+	} else {
+		vu.log(fmt.Sprintf("Loaded %d files", len(loadmap)))
+	}
+
 	return nil
 }
 
@@ -483,7 +534,6 @@ func (vu *VuFs) Stop() {
 	<-vu.fcallchanDone
 }
 
-
 // Start listening for connections.
 func (vu *VuFs) Start(ntype, addr string) error {
 	vu.Lock()
@@ -506,13 +556,13 @@ func (vu *VuFs) Start(ntype, addr string) error {
 	return nil
 }
 
-
 var fcallhandlers map[uint8]func(*ConnFcall) string
 
 func New(root string) *VuFs {
 
 	vu := new(VuFs)
 	vu.Root = root
+	vu.log("creating filesystem rooted at " + root)
 	vu.connchan = make(chan net.Conn)
 	vu.fcallchan = make(chan *ConnFcall)
 	vu.connchanDone = make(chan bool)

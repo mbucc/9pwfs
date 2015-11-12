@@ -15,18 +15,19 @@ import (
 
 func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs, net.Conn) {
 
+	// Start server and create connection.
 	fs := vufs.New(rootdir)
 	err := fs.Start("tcp", vufs.DEFAULTPORT)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
-
 	c, err := net.Dial("tcp", vufs.DEFAULTPORT)
 	if err != nil {
 		t.Errorf("connection failed: %v", err)
 		return nil, nil
 	}
 
+	// Send version message.
 	tx := &vufs.Fcall{
 		Type:    vufs.Tversion,
 		Tag:     vufs.NOTAG,
@@ -37,7 +38,6 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 		t.Errorf("connection write failed: %v", err)
 		return nil, nil
 	}
-
 	rx, err := vufs.ReadFcall(c)
 	if err != nil {
 		t.Errorf("connection read failed: %v", err)
@@ -52,6 +52,7 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 		return nil, nil
 	}
 
+	// Attach to root directory.
 	tx = &vufs.Fcall{
 		Type:  vufs.Tattach,
 		Fid:   fid,
@@ -63,7 +64,6 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 	if err != nil {
 		t.Fatalf("Tattach write failed: %v", err)
 	}
-
 	rx, err = vufs.ReadFcall(c)
 	if err != nil {
 		t.Errorf("Rattach read failed: %v", err)
@@ -74,8 +74,20 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 	if rx.Type != vufs.Rattach {
 		t.Errorf("bad message type, expected %d got %d", vufs.Rattach, rx.Type)
 	}
+
 	return fs, c
 
+}
+
+func createFile(c net.Conn, name string, fid uint32, tag uint16) error {
+	tx := new(vufs.Fcall)
+	tx.Type = vufs.Tcreate
+	tx.Fid = fid
+	tx.Tag = tag
+	tx.Name = name
+	tx.Mode = 0
+	tx.Perm = vufs.Perm(0644)
+	return vufs.WriteFcall(c, tx)
 }
 
 // Can adm create a subdirectory off root?   (Yes.)
@@ -98,17 +110,11 @@ func TestCreate(t *testing.T) {
 
 	//fs.Chatty(true)
 
-	tx := new(vufs.Fcall)
-	tx.Type = vufs.Tcreate
-	tx.Fid = fid
-	tx.Tag = 1
-	tx.Name = "testcreate.txt"
-	tx.Mode = 0
-	tx.Perm = vufs.Perm(0644)
-
-	err = vufs.WriteFcall(c, tx)
+	name := "testcreate.txt"
+	tag := uint16(1)
+	err = createFile(c, name, fid, tag)
 	if err != nil {
-		t.Fatalf("Tcreate write failed: %v", err)
+		t.Fatalf("Tcreate failed: %v", err)
 	}
 
 	rx, err := vufs.ReadFcall(c)
@@ -116,15 +122,15 @@ func TestCreate(t *testing.T) {
 		t.Errorf("Rcreate read failed: %v", err)
 	}
 	if rx.Type == vufs.Rerror {
-		t.Fatalf("attach returned error: '%s'", rx.Ename)
+		t.Fatalf("create returned error: '%s'", rx.Ename)
 	}
 	if rx.Type != vufs.Rcreate {
 		t.Errorf("bad message type, expected %d got %d", vufs.Rcreate, rx.Type)
 	}
 
 	// Tag must be the same
-	if rx.Tag != tx.Tag {
-		t.Errorf("wrong tag, expected %d got %d", tx.Tag, rx.Tag)
+	if rx.Tag != tag {
+		t.Errorf("wrong tag, expected %d got %d", tag, rx.Tag)
 	}
 
 	// Qid should be loaded
@@ -133,7 +139,7 @@ func TestCreate(t *testing.T) {
 	}
 
 	// Stat newly created file.
-	tx = &vufs.Fcall{Type: vufs.Tstat, Fid: fid, Tag: 1}
+	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: fid, Tag: 1}
 	err = vufs.WriteFcall(c, tx)
 	if err != nil {
 		t.Fatalf("Tstat write failed: %v", err)
@@ -165,6 +171,57 @@ func TestCreate(t *testing.T) {
 		t.Errorf("wrong group, expected '%s' got '%s'", vufs.DEFAULT_USER, dir.Uid)
 	}
 }
+
+
+
+func TestFailIfFileAlreadyExists(t *testing.T) {
+
+	rootdir, err := ioutil.TempDir("", "testcreate")
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(rootdir)
+
+	uid := "mark"
+	fid := uint32(1)
+	fs, c := setup_create_test(t, fid, rootdir, uid)
+	if fs == nil || c == nil {
+		return
+	}
+	defer fs.Stop()
+	defer c.Close()
+
+	//fs.Chatty(true)
+
+	name := "testcreate.txt"
+	tag := uint16(1)
+	err = createFile(c, name, fid, tag)
+	if err != nil {
+		t.Fatalf("Tcreate failed: %v", err)
+	}
+
+	_, err = vufs.ReadFcall(c)
+	if err != nil {
+		t.Fatalf("Rcreate read failed: %v", err)
+	}
+
+	err = createFile(c, name, fid, tag)
+	if err != nil {
+		t.Fatalf("Tcreate write failed: %v", err)
+	}
+
+	rx, err := vufs.ReadFcall(c)
+	if err != nil {
+		t.Errorf("Rcreate read failed: %v", err)
+	}
+	if rx.Type != vufs.Rerror {
+		t.Fatalf("Tcreate should fail if file already exists")
+	}
+	if rx.Ename != "file already exists" {
+		t.Fatalf("expected '%s', got '%s'", "file already exists", rx.Ename)
+	}
+}
+
 
 // Create takes owner from request and group from parent directory.
 // Root directory mode = 550 means no files in entire tree can be created.
