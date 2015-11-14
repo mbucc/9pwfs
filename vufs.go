@@ -15,8 +15,9 @@ import (
 // A Fid is a pointer to a file (a handle) and is unique per connection.
 // The uid is set on attach.
 type Fid struct {
-	uid  string
 	file *File
+	uid  string
+	open bool
 }
 
 type Conn struct {
@@ -38,9 +39,10 @@ type ConnFcall struct {
 // A File represents a file in the file system, and is unique across the file server.
 // Multiple connections may have a handle to the same File.
 type File struct {
+	// dir.go:60,72
 	Dir
 	parent *File
-	list   []*File
+	children map[string]*File
 }
 
 // A Tree is an in-memory representation of the entire File structure.
@@ -192,7 +194,7 @@ func (vu *VuFs) rattach(r *ConnFcall) string {
 		return "fid already in use on this connection"
 	}
 
-	r.conn.fids[r.fc.Fid] = &Fid{r.fc.Uname, vu.tree.root}
+	r.conn.fids[r.fc.Fid] = &Fid{vu.tree.root, r.fc.Uname, false}
 	rc.Qid = vu.tree.root.Qid
 	return ""
 }
@@ -238,10 +240,9 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	// BUG(mbucc) No check on what characters are used in new filename.
 
 	// See if file already exists.
-	for _, fp := range parent.list {
-		if fp.Name == r.fc.Name {
-			return "already exists"
-		}
+	_, found = parent.children[r.fc.Name]
+	if found {
+		return "already exists"
 	}
 
 	if r.fc.Perm&QTDIR == 1 && r.fc.Mode&3 != OREAD {
@@ -285,7 +286,6 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return emsg
 	}
 
-
 	// dir.go:60,72
 	f := new(File)
 	f.Qid.Type = QTFILE
@@ -300,11 +300,126 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	f.Gid = gid
 	f.Muid = uid
 	f.parent = parent
-	f.parent.list = append(f.parent.list, f)
+	f.parent.children[f.Name] = f
 
-	r.conn.fids[r.fc.Fid] = &Fid{uid, f}
+	r.conn.fids[r.fc.Fid] = &Fid{f, uid, true}
 	rc.Type = Rcreate
 	rc.Qid = f.Qid
+
+	return ""
+}
+
+func CheckPerm(f *File, uid string, perm Perm) bool {
+
+	if uid == "" {
+		return false
+	}
+
+	perm &= 7
+
+	// other permissions
+	fperm := f.Mode & 7
+	if (fperm & perm) == perm {
+
+		return true
+	}
+
+	// uid permissions
+	if f.Uid == uid {
+		fperm |= (f.Mode >> 6) & 7
+	}
+
+	if (fperm & perm) == perm {
+
+		return true
+	}
+
+/*
+
+	// BUG(mbucc) : groups not implemented.
+
+	// group permissions
+	groups := uid.Groups()
+	if groups != nil && len(groups) > 0 {
+		for i := 0; i < len(groups); i++ {
+			if f.Gid == groups[i].Name() {
+				fperm |= (f.Mode >> 3) & 7
+				break
+			}
+		}
+	}
+
+	if (fperm & perm) == perm {
+
+		return true
+	}
+*/
+
+	return false
+}
+
+
+// Response to Walk message.
+func (vu *VuFs) rwalk(r *ConnFcall) string {
+
+	tx := r.fc
+
+	fid, found := r.conn.fids[tx.Fid]
+	if !found {
+		return fmt.Sprintf("fid %d not found", tx.Fid)
+	}
+	
+	if len(tx.Wname) > 0 && fid.file.Type & QTDIR == 1{
+		return "not a directory"
+	}
+
+	if fid.open {
+		return "already open"
+	}
+
+	if len(tx.Wname) == 0 {
+		r.conn.fids[tx.Newfid] = fid
+		return ""
+	}
+
+	_, found = r.conn.fids[tx.Newfid]
+	if found {
+		return "already in use"
+	}
+	
+	f := fid.file
+	for i, wn := range tx.Wname {
+
+		if wn == ".." {
+			f = f.parent
+		} else {
+			if f, found = f.children[wn]; !found {
+				if i == 0 {
+					return fmt.Sprintf("'%s' not found", wn)
+				} else {
+					// Return files we have walked, but don't set newfid.
+					return ""
+				}
+			}
+	
+			if f.Type & QTDIR == 1 && !CheckPerm(f, fid.uid, DMEXEC) {
+				if i == 0 {
+					return "permission denied"
+				} else {
+					// Return files we have walked, but don't set newfid.
+					return ""
+				}
+			}
+		}
+
+		rc.Wqid = append(rc.Wqid, f.Qid)
+	}
+
+	newfid := new(Fid)
+	newfid.uid = fid.uid
+	newfid.file = f
+
+	r.conn.fids[tx.Newfid] = newfid
 
 	return ""
 }
@@ -436,7 +551,7 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 	f.Mtime = uint32(info.ModTime().Unix())
 	f.Length = uint64(info.Size())
 	f.Name = info.Name()
-	f.list = make([]*File, 0)
+	f.children = make(map[string]*File)
 
 	if info.IsDir() {
 		f.Mode |= DMDIR
@@ -450,7 +565,7 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 		if !found {
 			return nil, fmt.Errorf("parent '%s' not in loadmap for '%s'", parentpath, ospath)
 		}
-		f.parent.list = append(f.parent.list, f)
+		f.parent.children[f.Name] = f
 	} else {
 		f.Name = "/"
 		f.parent = f
@@ -486,6 +601,9 @@ var loadmap map[string]*File
 
 func (vu *VuFs) buildtree() error {
 
+	t0 := time.Now()
+
+
 	loadmap = make(map[string]*File, 100000)
 	err := filepath.Walk(vu.Root, vu.buildnode)
 	if err != nil {
@@ -499,10 +617,12 @@ func (vu *VuFs) buildtree() error {
 
 	vu.tree = &Tree{f}
 
+    	t1 := time.Now()
+
 	if len(loadmap) == 1 {
-		vu.log("loaded 1 file")
+		vu.log(fmt.Sprintf("loaded 1 file in %v", t1.Sub(t0)))
 	} else {
-		vu.log(fmt.Sprintf("Loaded %d files", len(loadmap)))
+		vu.log(fmt.Sprintf("Loaded %d files in %v", len(loadmap), t1.Sub(t0)))
 	}
 
 	return nil
@@ -574,6 +694,7 @@ func New(root string) *VuFs {
 		Tauth:    vu.rauth,
 		Tstat:    vu.rstat,
 		Tcreate:  vu.rcreate,
+		Twalk:  vu.rwalk,
 	}
 
 	return vu

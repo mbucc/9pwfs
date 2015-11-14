@@ -7,7 +7,7 @@ package vufs_test
 import (
 	"github.com/mbucc/vufs"
 	"io/ioutil"
-
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -79,15 +79,38 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 
 }
 
-func createFile(c net.Conn, name string, fid uint32, tag uint16) error {
+func createFile(c net.Conn, name string, fid, newfid uint32, tag uint16) error {
+
 	tx := new(vufs.Fcall)
-	tx.Type = vufs.Tcreate
+
+	tx.Type = vufs.Twalk
 	tx.Fid = fid
+	tx.Newfid = newfid
+	tx.Tag = tag
+	tx.Wname = []string{}
+	if err := vufs.WriteFcall(c, tx); err != nil {
+		return err
+	}
+
+	rx, err := vufs.ReadFcall(c)
+	if err != nil {
+		return err
+	}
+	if rx.Type == vufs.Rerror {
+		return fmt.Errorf("Twalk returned error: '%s'", rx.Ename)
+	}
+	if rx.Type != vufs.Rwalk {
+		return fmt.Errorf("bad message type, expected %d got %d", vufs.Rattach, rx.Type)
+	}
+
+	tx.Type = vufs.Tcreate
+	tx.Fid = newfid
 	tx.Tag = tag
 	tx.Name = name
 	tx.Mode = 0
 	tx.Perm = vufs.Perm(0644)
 	return vufs.WriteFcall(c, tx)
+
 }
 
 // Can adm create a subdirectory off root?   (Yes.)
@@ -101,6 +124,7 @@ func TestCreate(t *testing.T) {
 
 	uid := "mark"
 	fid := uint32(1)
+	newfid := uint32(2)
 	fs, c := setup_create_test(t, fid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
@@ -112,7 +136,7 @@ func TestCreate(t *testing.T) {
 
 	name := "testcreate.txt"
 	tag := uint16(1)
-	err = createFile(c, name, fid, tag)
+	err = createFile(c, name, fid, newfid, tag)
 	if err != nil {
 		t.Fatalf("Tcreate failed: %v", err)
 	}
@@ -195,7 +219,7 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 
 	name := "testcreate.txt"
 	tag := uint16(1)
-	err = createFile(c, name, fid, tag)
+	err = createFile(c, name, fid, uint32(2), tag)
 	if err != nil {
 		t.Fatalf("Tcreate failed: %v", err)
 	}
@@ -205,7 +229,7 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 		t.Fatalf("Rcreate read failed: %v", err)
 	}
 
-	err = createFile(c, name, fid, tag)
+	err = createFile(c, name, fid, uint32(3), tag)
 	if err != nil {
 		t.Fatalf("Tcreate write failed: %v", err)
 	}
@@ -217,8 +241,8 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 	if rx.Type != vufs.Rerror {
 		t.Fatalf("Tcreate should fail if file already exists")
 	}
-	if rx.Ename != "file already exists" {
-		t.Fatalf("expected '%s', got '%s'", "file already exists", rx.Ename)
+	if rx.Ename != "already exists" {
+		t.Fatalf("expected '%s', got '%s'", "already exists", rx.Ename)
 	}
 }
 

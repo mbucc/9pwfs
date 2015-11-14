@@ -89,6 +89,18 @@ create
   [] It is an error if the fid is already in use.
   [] The Qid is returned for the created file
 
+walk
+  [x] The fid must represent a directory unless zero path name elements are specified.
+  [x] The fid must be valid in the current session.
+  [x] The fid must not have been opened for I/O by an open or create message.
+  [x] If newfid is in use or otherwise illegal, an Rerror is returned. 
+  [x] It is legal for nwname to be zero, in which case newfid will represent the
+     same file as fid and the walk will usually succeed; this is equivalent to
+     walking to dot.
+  [x] The implied user of the request must have permission to search (execute) each directory.
+  [x] If the first element cannot be walked for any reason, Rerror is returned.
+  [x] The name ``..'' (dot–dot) represents the parent directory.
+
 open
   [] OTRUNC truncates file and requires write permission.
   [] if OTRUNC with QTAPPEND, write perm still required but file is not truncated.
