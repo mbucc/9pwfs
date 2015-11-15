@@ -222,13 +222,12 @@ func (vu *VuFs) rstat(r *ConnFcall) string {
 // Response to Create message.
 func (vu *VuFs) rcreate(r *ConnFcall) string {
 
+	// Fid that comes in should point to a directory.
 	fid, found := r.conn.fids[r.fc.Fid]
 	if !found {
 		return "fid not found"
 	}
 	parent := fid.file
-	uid := fid.uid
-	gid := fid.file.Gid
 	if parent.Qid.Type&QTDIR == 0 {
 		return parent.Name + " is not a directory"
 	}
@@ -237,9 +236,14 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return r.fc.Name + " invalid name"
 	}
 
-	// BUG(mbucc) No check on what characters are used in new filename.
+	// User must have permission to write to parent directory.
+	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
+		return "permission denied"
+	}
 
-	// See if file already exists.
+	// BUG(mbucc) Restrict characters used in a new filename.
+
+	// File should not already exist.
 	_, found = parent.children[r.fc.Name]
 	if found {
 		return "already exists"
@@ -248,20 +252,24 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	if r.fc.Perm&QTDIR == 1 && r.fc.Mode&3 != OREAD {
 		return "can only create a directory in read mode"
 	}
-	// fcall.go:55,79
 
+	// fcall.go:55,79
 	// mode = I/O type, e.g. OREAD.  See const.go:50,61.
 
 	ospath := filepath.Join(vu.Root, parent.Name, r.fc.Name)
 	fsyspath := filepath.Join(parent.Name, r.fc.Name)
+
 	goflags := openflags(r.fc.Mode, r.fc.Perm) | os.O_CREATE
 	gomode := os.FileMode(r.fc.Perm & 0777)
-	// Times in 9p messages will wrap in 2106.
-	now := uint32(time.Now().Unix())
+
 	fp, err := os.OpenFile(ospath, goflags, gomode)
 	if err != nil {
 		return fsyspath + ": " + err.Error()
 	}
+
+	// Owner of new file is user that attached.  Group is from parent directory.
+	uid := fid.uid
+	gid := parent.Gid
 	err = writeOwnership(ospath, uid, gid)
 	if err != nil {
 		return fsyspath + ": " + err.Error()
@@ -286,9 +294,12 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return emsg
 	}
 
+	// Times in 9p messages will wrap in 2106.
+	now := uint32(time.Now().Unix())
+
 	// dir.go:60,72
 	f := new(File)
-	f.Qid.Type = QTFILE
+	f.Qid.Type = QTFILE    // BUG(mbucc): File type stubbed to QTFILE.
 	f.Qid.Path = stat.Ino
 	f.Qid.Type = uint8(r.fc.Perm >> 24)
 	f.Mode = r.fc.Perm
@@ -317,6 +328,7 @@ func CheckPerm(f *File, uid string, perm Perm) bool {
 
 	perm &= 7
 
+fmt.Println("file mode =", f.Mode)
 	// other permissions
 	fperm := f.Mode & 7
 	if (fperm & perm) == perm {
@@ -545,6 +557,7 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 
 	f.Qid.Path = stat.Ino
 	f.Qid.Vers = uint32(info.ModTime().UnixNano() / 1000000)
+	// BUG(mbucc) We drop all higher file mode bits when loading tree.
 	f.Mode = Perm(info.Mode() & 0777)
 
 	f.Atime = uint32(atime(stat).Unix())
@@ -569,6 +582,12 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 	} else {
 		f.Name = "/"
 		f.parent = f
+
+		// Hard code the mode of root directory to 0777.
+		// This way, you have to sudo to the user that is running the file
+		// system daemon to "manually" manipulate the files in the file sys.
+		// Not real security, but a convenience to avoid stupid mistakes.
+		f.Mode = 0777
 	}
 
 	// BUG(mbucc) Look up [u|g|mu]id from <path>.vufs

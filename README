@@ -81,8 +81,8 @@ stat
 
 
 create
-  [] Creating a file takes owner of request and group of directory.
-  [] Creating a file requires write perm on directory.
+  [x] Creating a file takes owner of request and group of directory.
+  [x] Creating a file requires write perm on directory.
   [] Creating a file clamps file permissions to the directory's.
   [] A newly created file is opened.
   [x] It is an error to create a file with the name . or ..

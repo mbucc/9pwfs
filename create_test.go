@@ -122,6 +122,12 @@ func TestCreate(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
+/*
+	err = os.Chmod(rootdir, 0777)
+	if err != nil {
+		t.Fatalf("can't chmod test rootdir: %v", err)
+	}
+*/
 	uid := "mark"
 	fid := uint32(1)
 	newfid := uint32(2)
