@@ -163,7 +163,7 @@ func TestCreate(t *testing.T) {
 	}
 
 	// Stat newly created file.
-	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: fid, Tag: 1}
+	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: newfid, Tag: 1}
 	err = vufs.WriteFcall(c, tx)
 	if err != nil {
 		t.Fatalf("Tstat write failed: %v", err)
