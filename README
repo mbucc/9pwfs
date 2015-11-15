@@ -99,7 +99,7 @@ walk
      walking to dot.
   [x] The implied user of the request must have permission to search (execute) each directory.
   [x] If the first element cannot be walked for any reason, Rerror is returned.
-  [x] The name ``..'' (dot–dot) represents the parent directory.
+  [x] The name .. represents the parent directory.
 
 open
   [] OTRUNC truncates file and requires write permission.
