@@ -8,47 +8,6 @@ import (
 	"time"
 )
 
-// Golang Flags (not all may be implemented by underlying operating system):
-// An "x" means it is handled by this routine.
-//		    x    O_RDONLY
-//		    x    O_WRONLY
-//		    x    O_RDWR
-//		    x    O_APPEND
-//		          O_CREATE    - set manually in File.Create
-//		    x    O_EXCL
-//		          O_SYNC
-//		    x    O_TRUNC
-func openflags(mode uint8, perm Perm) int {
-	ret := int(0)
-	switch mode & 3 {
-	case OREAD:
-		ret = os.O_RDONLY
-		break
-	case ORDWR:
-		ret = os.O_RDWR
-		break
-	case OWRITE:
-		ret = os.O_WRONLY
-		break
-	case OEXEC:
-		ret = os.O_RDONLY
-		break
-	}
-	if mode&OTRUNC != 0 {
-		ret |= os.O_TRUNC
-	}
-	if perm&DMAPPEND != 0 {
-		ret |= os.O_APPEND
-	}
-	if perm&DMEXCL != 0 {
-		ret |= os.O_EXCL
-	}
-
-	return ret
-}
-
-// NewFile creates a new File and then opens it.
-
 func writeOwnership(path, uid, gid string) error {
 	fn := path + ".vufs"
 	fp, err := os.OpenFile(fn, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0600)
@@ -124,7 +83,10 @@ func (vu *VuFs) rattach(r *ConnFcall) string {
 		return "fid already in use on this connection"
 	}
 
-	r.conn.fids[r.fc.Fid] = &Fid{vu.tree.root, r.fc.Uname, false}
+	fid := new(Fid)
+	fid.file = vu.tree.root
+	fid.uid = r.fc.Uname
+	r.conn.fids[r.fc.Fid] = fid
 	rc.Qid = vu.tree.root.Qid
 	return ""
 }
@@ -152,6 +114,9 @@ func (vu *VuFs) rstat(r *ConnFcall) string {
 // Response to Create message.
 func (vu *VuFs) rcreate(r *ConnFcall) string {
 
+	var err error
+	var fp *os.File
+
 	// Fid that comes in should point to a directory.
 	fid, found := r.conn.fids[r.fc.Fid]
 	if !found {
@@ -165,13 +130,12 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	if r.fc.Name == "." || r.fc.Name == ".." {
 		return r.fc.Name + " invalid name"
 	}
-
 	// User must have permission to write to parent directory.
 	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
 		return "permission denied"
 	}
 
-	// BUG(mbucc) Restrict characters used in a new filename.
+	// BUG(mbucc) Check characters used in a new filename.
 
 	// File should not already exist.
 	_, found = parent.children[r.fc.Name]
@@ -179,60 +143,49 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return "already exists"
 	}
 
-	if r.fc.Perm&QTDIR == 1 && r.fc.Mode&3 != OREAD {
+	if r.fc.Perm&QTDIR != 0 && r.fc.Mode&3 != OREAD {
 		return "can only create a directory in read mode"
 	}
 
 	// fcall.go:55,79
-	// mode = I/O type, e.g. OREAD.  See const.go:50,61.
+	// See const.go:50,61
 
 	ospath := filepath.Join(vu.Root, parent.Name, r.fc.Name)
-	fsyspath := filepath.Join(parent.Name, r.fc.Name)
 
-	goflags := openflags(r.fc.Mode, r.fc.Perm) | os.O_CREATE
-	//gomode := os.FileMode(r.fc.Perm & 0777)
 
-	var gomode os.FileMode
-	if r.fc.Perm&QTDIR == 1 {
-		t0 := parent.Mode & 0777
-		t1 := t0 | ^Perm(0777)
-		t2 := r.fc.Perm & t1
-		gomode = os.FileMode(t2) | os.ModeDir
+	if r.fc.Perm&QTDIR == 0 {
+		fp, err = os.OpenFile(ospath, os.O_RDWR|os.O_CREATE,  os.FileMode(r.fc.Perm&0777))
 	} else {
-		gomode = os.FileMode(r.fc.Perm & (^Perm(0666) | (parent.Mode & 0666)))
+		err = os.Mkdir(ospath, os.FileMode(r.fc.Perm&0777))
+		if err == nil {
+			fp, err = os.OpenFile(ospath, os.O_RDONLY, 0)
+		}
+
 	}
-
-
-	fp, err := os.OpenFile(ospath, goflags, gomode)
 	if err != nil {
-		return fsyspath + ": " + err.Error()
+		return err.Error()
 	}
 
 	// Owner of new file is user that attached.  Group is from parent directory.
 	uid := fid.uid
 	gid := parent.Gid
 	err = writeOwnership(ospath, uid, gid)
+
 	if err != nil {
-		return fsyspath + ": " + err.Error()
+		return err.Error()
 	}
 
 	info, err := fp.Stat()
 	if err != nil {
-		emsg := fsyspath + ": " + err.Error()
-		err1 := os.Remove(ospath)
-		if err1 != nil {
-			emsg += " (and file was left on disk)"
-		}
-		return emsg
+		os.Remove(ospath)
+		os.Remove(ospath + ".vufs")
+		return err.Error()
 	}
 	stat, err := info2stat(info)
 	if err != nil {
-		emsg := fsyspath + ": " + err.Error()
-		err1 := os.Remove(ospath)
-		if err1 != nil {
-			emsg += " (and file was left on disk)"
-		}
-		return emsg
+		os.Remove(ospath)
+		os.Remove(ospath + ".vufs")
+		return err.Error()
 	}
 
 	// Times in 9p messages will wrap in 2106.
@@ -240,10 +193,10 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 
 	// dir.go:60,72
 	f := new(File)
-	if r.fc.Perm&QTDIR == 1 {
-		f.Qid.Type |= QTDIR
-	} else {
+	if r.fc.Perm&QTDIR == 0 {
 		f.Qid.Type = QTFILE
+	} else {
+		f.Qid.Type |= QTDIR
 	}
 	f.Qid.Path = stat.Ino
 	f.Qid.Type = uint8(r.fc.Perm >> 24)
@@ -256,11 +209,21 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	f.Uid = uid
 	f.Gid = gid
 	f.Muid = uid
+
 	f.parent = parent
+	f.parent.children = make(map[string]*File)
 	f.parent.children[f.Name] = f
 
-	r.conn.fids[r.fc.Fid] = &Fid{f, uid, true}
-	rc.Type = Rcreate
+	f.refcnt = 1
+	f.handle = fp
+
+	fid = new(Fid)
+	fid.file = f
+	fid.uid = uid
+	fid.open = true
+	fid.mode = r.fc.Mode
+	r.conn.fids[r.fc.Fid] = fid
+
 	rc.Qid = f.Qid
 
 	return ""
@@ -324,9 +287,8 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 	if !found {
 		return fmt.Sprintf("fid %d not found", tx.Fid)
 	}
-fmt.Println("walk Wname =", tx.Wname)
-fmt.Println("walk: fid.file =", fid.file)
-	if len(tx.Wname) > 0 && fid.file.Type & QTDIR != QTDIR {
+
+	if len(tx.Wname) > 0 && fid.file.Type & QTDIR == 0 {
 		return "not a directory"
 	}
 
@@ -360,7 +322,7 @@ fmt.Println("walk: fid.file =", fid.file)
 				}
 			}
 	
-			if f.Type & QTDIR == 1 && !CheckPerm(f, fid.uid, DMEXEC) {
+			if f.Type & QTDIR != 0 && !CheckPerm(f, fid.uid, DMEXEC) {
 				if i == 0 {
 					return "permission denied"
 				} else {
@@ -379,5 +341,27 @@ fmt.Println("walk: fid.file =", fid.file)
 
 	r.conn.fids[tx.Newfid] = newfid
 
+	return ""
+}
+
+// Response to a Clunk message.
+func (vu *VuFs) rclunk(r *ConnFcall) string {
+	var err error
+
+	fid, found := r.conn.fids[r.fc.Fid]
+	if !found {
+		return "fid not found"
+	}
+
+	fid.file.refcnt -= 1
+	if fid.file.refcnt == 0 {
+		fid.file.handle.Close()
+	}
+
+
+	rc.Stat, err = fid.file.Bytes()
+	if err != nil {
+		return "stat: " + err.Error()
+	}
 	return ""
 }

@@ -255,7 +255,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
-	defer os.RemoveAll(rootdir)
+	//defer os.RemoveAll(rootdir)
 
 	uid := "mark"
 	rootfid := uint32(1)
@@ -266,7 +266,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	fs.Chatty(true)
+	//fs.Chatty(true)
 
 	// Walk to parent directory of new subdir (file system root).
 	// This loads a fid for new directory that we will use in create call.
@@ -305,7 +305,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 		t.Fatalf("reading Rcreate failed: %v", err)
 	}
 	if rx.Type == vufs.Rerror {
-		t.Errorf("Tcreate returned error: '%s'", rx.Ename)
+		t.Fatalf("Tcreate returned error: '%s'", rx.Ename)
 	}
 
 

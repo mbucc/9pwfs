@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
-	"time"
 )
 
 // A Fid is a pointer to a file (a handle) and is unique per connection.
@@ -17,6 +16,22 @@ type Fid struct {
 	file *File
 	uid  string
 	open bool
+	// See const.go:50,61
+	mode    uint8
+}
+
+// A File represents a file in the file system, and is unique across the file server.
+// Multiple connections may have a handle to the same File.
+// Only one file handle is opened for all connections and their clients.
+// When a clunk results in a refcnt of zero, the file handle is closed.
+type File struct {
+	// dir.go:60,72
+	Dir
+	parent *File
+	children map[string]*File
+	// This is always read/write.  The Fid stores if the file was opened read or read/write.
+	handle *os.File 
+	refcnt int
 }
 
 type Conn struct {
@@ -33,15 +48,6 @@ type Conn struct {
 type ConnFcall struct {
 	conn *Conn
 	fc   *Fcall
-}
-
-// A File represents a file in the file system, and is unique across the file server.
-// Multiple connections may have a handle to the same File.
-type File struct {
-	// dir.go:60,72
-	Dir
-	parent *File
-	children map[string]*File
 }
 
 // A Tree is an in-memory representation of the entire File structure.
@@ -261,8 +267,7 @@ var loadmap map[string]*File
 
 func (vu *VuFs) buildtree() error {
 
-	t0 := time.Now()
-
+	//t0 := time.Now()
 
 	loadmap = make(map[string]*File, 100000)
 	err := filepath.Walk(vu.Root, vu.buildnode)
@@ -277,13 +282,16 @@ func (vu *VuFs) buildtree() error {
 
 	vu.tree = &Tree{f}
 
-    	t1 := time.Now()
+    	//t1 := time.Now()
 
+/*
+// TODO: Too chatty for tests; put in read-only /stats file (or similar)
 	if len(loadmap) == 1 {
 		vu.log(fmt.Sprintf("loaded 1 file in %v", t1.Sub(t0)))
 	} else {
 		vu.log(fmt.Sprintf("Loaded %d files in %v", len(loadmap), t1.Sub(t0)))
 	}
+*/
 
 	return nil
 }
@@ -342,7 +350,7 @@ func New(root string) *VuFs {
 
 	vu := new(VuFs)
 	vu.Root = root
-	vu.log("creating filesystem rooted at " + root)
+	//vu.log("creating filesystem rooted at " + root)
 	vu.connchan = make(chan net.Conn)
 	vu.fcallchan = make(chan *ConnFcall)
 	vu.connchanDone = make(chan bool)
@@ -355,6 +363,7 @@ func New(root string) *VuFs {
 		Tstat:    vu.rstat,
 		Tcreate:  vu.rcreate,
 		Twalk:  vu.rwalk,
+		Tclunk:  vu.rclunk,
 	}
 
 	return vu
