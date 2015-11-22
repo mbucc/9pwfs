@@ -368,3 +368,33 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 
 	return ""
 }
+
+
+
+func (vu *VuFs) rwrite(r *ConnFcall) string {
+
+	_, found := r.conn.fids[r.fc.Fid]
+	if !found {
+		return "fid not found"
+	}
+
+	return ""
+/*
+	fid := req.Fid.Aux.(*Fid)
+	tc := req.Tc
+	err := fid.stat()
+	if err != nil {
+		req.RespondError(err)
+		return
+	}
+
+	n, e := fid.file.WriteAt(tc.Data, int64(tc.Offset))
+	if e != nil {
+		req.RespondError(toError(e))
+		return
+	}
+
+	req.RespondRwrite(uint32(n))
+*/
+}
+

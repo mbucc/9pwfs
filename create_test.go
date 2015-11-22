@@ -99,7 +99,7 @@ func createFile(c net.Conn, name string, fid, newfid uint32, tag uint16, isdir b
 		return fmt.Errorf("Twalk returned error: '%s'", rx.Ename)
 	}
 	if rx.Type != vufs.Rwalk {
-		return fmt.Errorf("bad message type, expected %d got %d", vufs.Rattach, rx.Type)
+		return fmt.Errorf("bad message type, expected %d got %d", vufs.Rwalk, rx.Type)
 	}
 
 	tx.Type = vufs.Tcreate

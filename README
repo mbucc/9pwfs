@@ -97,6 +97,15 @@ walk
   [x] If the first element cannot be walked for any reason, Rerror is returned.
   [x] The name .. represents the parent directory.
 
+clunk
+  [] If opened with ORCLOSE (see open below), file is removed from server.
+  [x] After a clunk, the fid can be reused on the connection.
+
+write
+  [] fid must be opened for writing
+  [] directories may not be written
+  [] for QTAPPEND files, offset is ignored
+
 open
   [] OTRUNC truncates file and requires write permission.
   [] if OTRUNC with QTAPPEND, write perm still required but file is not truncated.
@@ -108,10 +117,6 @@ open
   * iounit field (if non-zero), is the max bytes guaranteed be transferred atomically
   [] (stat): server's may implement a timeout on QTEXCL (at least a minute).
   [] (stat): on QTEXCL timeout, initial fid is denied further I/O
-
-clunk
-  [] If opened with ORCLOSE (see open below), file is removed from server.
-  [x] After a clunk, the fid can be reused on the connection.
 
 flush
   [] To interrupt a long read (for example), client can flush that previous request.
@@ -125,12 +130,6 @@ read
   [] if offset > file size, a count of zero bytes read is returned
   [] the offset sent must point to the beginning of a directory entry;
     for example, zero.  or zero plus bytes returned from first read.
-
-write
-  [] fid must be opened for writing
-  [] directories may not be written
-  [] for QTAPPEND files, offset is ignored
-
 remove
   [] remove the file represented by fid and clunk fid
   [] requres write perm in parent directory
