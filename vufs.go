@@ -128,7 +128,7 @@ func (c *Conn) recv() {
 			c.srv.fcallchan <- &ConnFcall{c, fc}
 		} else {
 			if !c.dying {
-				c.srv.chat("recv() error: " + err.Error())
+				c.srv.log("recv() error: " + err.Error())
 			}
 			continue
 		}
