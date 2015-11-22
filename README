@@ -60,12 +60,9 @@ version
 attach
   [x] If fid is already used (on this connection), return an error.
   [x] If server does not require authentication, auth returns an error.
-  [] Client can select attach to a "file tree" identified by the aname parameter.
-	--> not supported, must attach to "/"
-  [] If Client wants to authenticate, attach negotiates authentication via afid parameter.
-	--> authentication not supported
-  [] If it does, auth returns aqid which is used to communicate credentials.
-	--> authentication not supported
+  [] (Not planned) Client can select attach to a "file tree" identified by the aname parameter.
+  [] (Not planned) If Client wants to authenticate, attach negotiates authentication via afid parameter.
+  [] (Not planned) If it does, auth returns aqid which is used to communicate credentials.
   [x] Attach identifies the user.
 
 stat
@@ -78,7 +75,6 @@ stat
   [] muid = user that most recently changed the mtime
   [x] directories, by convention, have a length of zero
   [] stat response is limited to 65535 bytes
-
 
 create
   [x] Creating a file takes owner of request and group of directory.
@@ -115,7 +111,7 @@ open
 
 clunk
   [] If opened with ORCLOSE (see open below), file is removed from server.
-  [] After a clunk, the fid can be reused on the connection.
+  [x] After a clunk, the fid can be reused on the connection.
 
 flush
   [] To interrupt a long read (for example), client can flush that previous request.

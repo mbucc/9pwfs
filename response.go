@@ -353,7 +353,6 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 }
 
 func (vu *VuFs) rclunk(r *ConnFcall) string {
-	var err error
 
 	fid, found := r.conn.fids[r.fc.Fid]
 	if !found {
@@ -365,9 +364,7 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 		fid.file.handle.Close()
 	}
 
-	rc.Stat, err = fid.file.Bytes()
-	if err != nil {
-		return "stat: " + err.Error()
-	}
+	delete(r.conn.fids, r.fc.Fid)
+
 	return ""
 }

@@ -268,8 +268,8 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 
 	//fs.Chatty(true)
 
-	// Walk to parent directory of new subdir (file system root).
-	// This loads a fid for new directory that we will use in create call.
+	// Walk to file system root to create fid for subdirectory we are creating.
+	// Can't use root fid, as Tcreate moves the fid to reference the newly created file.
 	dirfid := uint32(2)
 	tag := uint16(1)
 	tx := new(vufs.Fcall)
@@ -308,8 +308,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 		t.Fatalf("Tcreate returned error: '%s'", rx.Ename)
 	}
 
-
-	// Clunk the new directory, as a walk will fail if the fid passed in is open.
+	// Clunk the new directory, as a walk will fail on an open fid.
 	tx.Reset()
 	tx.Type = vufs.Tclunk
 	tx.Fid = dirfid
@@ -324,6 +323,25 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	if rx.Type == vufs.Rerror {
 		t.Fatalf("Tclunk returned error: '%s'", rx.Ename)
 	}
+
+	// Walk to the new directory to get a fid for the subsequent create call.
+	tx.Reset()
+	tx.Type = vufs.Twalk
+	tx.Fid = rootfid
+	tx.Newfid = dirfid
+	tx.Tag = tag
+	tx.Wname = []string{"testdir"}
+	if err := vufs.WriteFcall(c, tx); err != nil {
+		t.Fatalf("Twalk failed: %v", err)
+	}
+	rx, err = vufs.ReadFcall(c)
+	if err != nil {
+		t.Fatalf("reading Rwalk failed: %v", err)
+	}
+	if rx.Type == vufs.Rerror {
+		t.Errorf("Twalk returned error: '%s'", rx.Ename)
+	}
+
 
 	// Create file /testdir/test.txt.  We can use dirfid, as it points to parent directory.
 	tx.Reset()
