@@ -205,6 +205,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	f := new(File)
 	if r.fc.Perm&DMDIR != 0 {
 		f.Qid.Type = QTDIR
+		f.children = make(map[string]*File)
 	} else {
 		f.Qid.Type = QTFILE
 	}
@@ -221,7 +222,6 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	f.Muid = uid
 
 	f.parent = parent
-	f.parent.children = make(map[string]*File)
 	f.parent.children[f.Name] = f
 
 	f.refcnt = 1

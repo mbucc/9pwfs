@@ -120,7 +120,6 @@ flush
   * If the oldtag Rmsg comes back before the Rflush, the trx was not flushed.
   * ... and more details.
 
-
 read
   [] fid must be opened for reading.
   [] if offset > file size, a count of zero bytes read is returned
@@ -137,8 +136,6 @@ remove
   [] requres write perm in parent directory
   [] plan9 removes file immediately, even if open by other clients.
   * unix typically let's other fids remain usable.
-
-
 
 wstat
   [] name can be changed by anyone with write permission in directory
