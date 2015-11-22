@@ -122,10 +122,16 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	if r.fc.Name == "." || r.fc.Name == ".." {
 		return "invalid file name"
 	}
+
+	if strings.HasSuffix(r.fc.Name, ".vufs") {
+		return "invalid file name"
+	}
+
 	// User must have permission to write to parent directory.
 	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
 		return "permission denied"
 	}
+
 
 	// BUG(mbucc) Check characters used in a new filename.
 

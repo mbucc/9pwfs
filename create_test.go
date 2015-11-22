@@ -361,6 +361,42 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	if dir.Mode != vufs.Perm(0600) {
 		t.Errorf("new file permissions not clamped: got %s not %s", dir.Mode, vufs.Perm(0600))
 	}
+}
 
+// File system uses .vufs extension to store permissions. 
+// Don't allow files to be created with this extension.
+func TestFailIfFileUsesMagicExtension(t *testing.T) {
+
+	rootdir, err := ioutil.TempDir("", "testcreate")
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(rootdir)
+
+	uid := "mark"
+	fid := uint32(1)
+	fs, c := setup_create_test(t, fid, rootdir, uid)
+	if fs == nil || c == nil {
+		return
+	}
+	defer fs.Stop()
+	defer c.Close()
+
+	//fs.Chatty(true)
+
+	name := "testcreate.vufs"
+	tag := uint16(1)
+	err = createFile(c, name, fid, uint32(2), tag, false)
+	if err != nil {
+		t.Fatalf("Tcreate failed: %v", err)
+	}
+
+	rx, err := vufs.ReadFcall(c)
+	if err != nil {
+		t.Fatalf("Rcreate read failed: %v", err)
+	}
+	if rx.Type != vufs.Rerror {
+		t.Fatalf("Tcreate should fail if file uses magic 'vufs' extension.")
+	}
 }
 

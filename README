@@ -83,11 +83,11 @@ stat
 create
   [x] Creating a file takes owner of request and group of directory.
   [x] Creating a file requires write perm on directory.
-  [] Creating a file clamps file permissions to the directory's.
-  [] A newly created file is opened.
+  [x] Creating a file clamps file permissions to the directory's.
+  [x] A newly created file is opened.
   [x] It is an error to create a file with the name . or ..
-  [] It is an error if the fid is already in use.
-  [] The Qid is returned for the created file
+  [x] It is an error if the fid is already in use.
+  [x] The Qid is returned for the created file
 
 walk
   [x] The fid must represent a directory unless zero path name elements are specified.
