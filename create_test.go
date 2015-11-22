@@ -255,7 +255,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
-	//defer os.RemoveAll(rootdir)
+	defer os.RemoveAll(rootdir)
 
 	uid := "mark"
 	rootfid := uint32(1)
@@ -341,16 +341,26 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 		t.Fatalf("reading Rcreate failed: %v", err)
 	}
 	if rx.Type == vufs.Rerror {
-		t.Errorf("Tcreate returned error: '%s'", rx.Ename)
+		t.Fatalf("Tcreate returned error: '%s'", rx.Ename)
 	}
 
-	// TODO(mbucc): test that file perm is 0600
+	// Test that file perm is 0600 (perms are clamped by parent dir)
+	tx = &vufs.Fcall{Type: vufs.Tstat, Fid: dirfid, Tag: 1}
+	err = vufs.WriteFcall(c, tx)
+	if err != nil {
+		t.Fatalf("Tstat write failed: %v", err)
+	}
+	rx, err = vufs.ReadFcall(c)
+	if err != nil {
+		t.Errorf("Rstat read failed: %v", err)
+	}
+	dir, err := vufs.UnmarshalDir(rx.Stat)
+	if err != nil {
+		t.Fatalf("UnmarshalDir failed: %v", rx.Ename)
+	}
+	if dir.Mode != vufs.Perm(0600) {
+		t.Errorf("new file permissions not clamped: got %s not %s", dir.Mode, vufs.Perm(0600))
+	}
+
 }
 
-
-
-// Create takes owner from request and group from parent directory.
-// Root directory mode = 550 means no files in entire tree can be created.
-// 700
-// 570
-// 557

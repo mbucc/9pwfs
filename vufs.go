@@ -350,7 +350,7 @@ func New(root string) *VuFs {
 
 	vu := new(VuFs)
 	vu.Root = root
-	//vu.log("creating filesystem rooted at " + root)
+	vu.log("creating filesystem rooted at " + root)
 	vu.connchan = make(chan net.Conn)
 	vu.fcallchan = make(chan *ConnFcall)
 	vu.connchanDone = make(chan bool)
