@@ -132,7 +132,6 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return "permission denied"
 	}
 
-
 	// BUG(mbucc) Check characters used in a new filename.
 
 	// File should not already exist.
@@ -369,8 +368,6 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 	return ""
 }
 
-
-
 func (vu *VuFs) rwrite(r *ConnFcall) string {
 
 	_, found := r.conn.fids[r.fc.Fid]
@@ -379,22 +376,21 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 	}
 
 	return ""
-/*
-	fid := req.Fid.Aux.(*Fid)
-	tc := req.Tc
-	err := fid.stat()
-	if err != nil {
-		req.RespondError(err)
-		return
-	}
+	/*
+		fid := req.Fid.Aux.(*Fid)
+		tc := req.Tc
+		err := fid.stat()
+		if err != nil {
+			req.RespondError(err)
+			return
+		}
 
-	n, e := fid.file.WriteAt(tc.Data, int64(tc.Offset))
-	if e != nil {
-		req.RespondError(toError(e))
-		return
-	}
+		n, e := fid.file.WriteAt(tc.Data, int64(tc.Offset))
+		if e != nil {
+			req.RespondError(toError(e))
+			return
+		}
 
-	req.RespondRwrite(uint32(n))
-*/
+		req.RespondRwrite(uint32(n))
+	*/
 }
-

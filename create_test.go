@@ -7,7 +7,6 @@ package vufs_test
 import (
 	"github.com/mbucc/vufs"
 	"io/ioutil"
-	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -33,20 +32,7 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 		Tag:     vufs.NOTAG,
 		Msize:   131072,
 		Version: vufs.VERSION9P}
-	err = vufs.WriteFcall(c, tx)
-	if err != nil {
-		t.Errorf("connection write failed: %v", err)
-		return nil, nil
-	}
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("connection read failed: %v", err)
-		return nil, nil
-	}
-	if rx.Type != vufs.Rversion {
-		t.Errorf("bad message type, expected %d got %d", vufs.Rversion, rx.Type)
-		return nil, nil
-	}
+	rx := writeTestFcall(t, c, tx)
 	if rx.Version != vufs.VERSION9P {
 		t.Errorf("bad version response, expected '%s' got '%s'", vufs.VERSION9P, rx.Version)
 		return nil, nil
@@ -60,26 +46,15 @@ func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuF
 		Afid:  vufs.NOFID,
 		Uname: uid,
 		Aname: "/"}
-	err = vufs.WriteFcall(c, tx)
-	if err != nil {
-		t.Fatalf("Tattach write failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("Rattach read failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Fatalf("Tattach returned error: '%s'", rx.Ename)
-	}
-	if rx.Type != vufs.Rattach {
-		t.Errorf("bad message type, expected %d got %d", vufs.Rattach, rx.Type)
-	}
+	rx = writeTestFcall(t, c, tx)
+	//fs.Chatty(true)
+
 
 	return fs, c
 
 }
 
-func createFile(c net.Conn, name string, fid, newfid uint32, tag uint16, isdir bool) error {
+func createFile(t *testing.T, c net.Conn, name string, fid, newfid uint32, tag uint16, isdir bool) *vufs.Fcall {
 
 	// Walk to root directory first so we don't lose the root fid.
 	tx := new(vufs.Fcall)
@@ -88,19 +63,7 @@ func createFile(c net.Conn, name string, fid, newfid uint32, tag uint16, isdir b
 	tx.Newfid = newfid
 	tx.Tag = tag
 	tx.Wname = []string{}
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		return err
-	}
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		return err
-	}
-	if rx.Type == vufs.Rerror {
-		return fmt.Errorf("Twalk returned error: '%s'", rx.Ename)
-	}
-	if rx.Type != vufs.Rwalk {
-		return fmt.Errorf("bad message type, expected %d got %d", vufs.Rwalk, rx.Type)
-	}
+	writeTestFcall(t, c, tx)
 
 	tx.Type = vufs.Tcreate
 	tx.Fid = newfid
@@ -112,7 +75,7 @@ func createFile(c net.Conn, name string, fid, newfid uint32, tag uint16, isdir b
 	} else {
 		tx.Perm = vufs.Perm(0644)
 	}
-	return vufs.WriteFcall(c, tx)
+	return writeTestFcall(t, c, tx)
 
 }
 
@@ -135,30 +98,9 @@ func TestCreate(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	//fs.Chatty(true)
-
 	name := "testcreate.txt"
 	tag := uint16(1)
-	err = createFile(c, name, fid, newfid, tag, false)
-	if err != nil {
-		t.Fatalf("Tcreate failed: %v", err)
-	}
-
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("Rcreate read failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Fatalf("create returned error: '%s'", rx.Ename)
-	}
-	if rx.Type != vufs.Rcreate {
-		t.Errorf("bad message type, expected %d got %d", vufs.Rcreate, rx.Type)
-	}
-
-	// Tag must be the same
-	if rx.Tag != tag {
-		t.Errorf("wrong tag, expected %d got %d", tag, rx.Tag)
-	}
+	rx := createFile(t, c, name, fid, newfid, tag, false)
 
 	// Qid should be loaded
 	if rx.Qid.Path == 0 {
@@ -167,14 +109,7 @@ func TestCreate(t *testing.T) {
 
 	// Stat newly created file.
 	tx := &vufs.Fcall{Type: vufs.Tstat, Fid: newfid, Tag: 1}
-	err = vufs.WriteFcall(c, tx)
-	if err != nil {
-		t.Fatalf("Tstat write failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("Rstat read failed: %v", err)
-	}
+	rx = writeTestFcall(t, c, tx)
 	dir, err := vufs.UnmarshalDir(rx.Stat)
 	if err != nil {
 		t.Fatalf("UnmarshalDir failed: %v", rx.Ename)
@@ -209,40 +144,53 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 	defer os.RemoveAll(rootdir)
 
 	uid := "mark"
-	fid := uint32(1)
-	fs, c := setup_create_test(t, fid, rootdir, uid)
+	rootfid := uint32(1)
+	fs, c := setup_create_test(t, rootfid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
 	}
 	defer fs.Stop()
 	defer c.Close()
 
-	//fs.Chatty(true)
-
 	name := "testcreate.txt"
-	tag := uint16(1)
-	err = createFile(c, name, fid, uint32(2), tag, false)
-	if err != nil {
-		t.Fatalf("Tcreate failed: %v", err)
-	}
 
-	_, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("Rcreate read failed: %v", err)
-	}
+	// Walk to root directory first so we don't lose the root fid.
+	tx := new(vufs.Fcall)
+	tx.Type = vufs.Twalk
+	tx.Fid = rootfid
+	tx.Newfid = 2
+	tx.Tag = 1
+	tx.Wname = []string{}
+	writeTestFcall(t, c, tx)
 
-	err = createFile(c, name, fid, uint32(3), tag, false)
-	if err != nil {
-		t.Fatalf("Tcreate write failed: %v", err)
-	}
+	// Create file.
+	tx.Reset()
+	tx.Type = vufs.Tcreate
+	tx.Fid = 2
+	tx.Tag = 1
+	tx.Name = name
+	tx.Mode = 0
+	tx.Perm = vufs.Perm(0644)
+	writeTestFcall(t, c, tx)
 
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("Rcreate read failed: %v", err)
-	}
-	if rx.Type != vufs.Rerror {
-		t.Fatalf("Tcreate should fail if file already exists")
-	}
+	// Walk to root directory (again, prepping for create call).
+	tx.Reset()
+	tx.Type = vufs.Twalk
+	tx.Fid = rootfid
+	tx.Newfid = 3
+	tx.Tag = 1
+	tx.Wname = []string{}
+	writeTestFcall(t, c, tx)
+
+	// Try to create same file again.
+	tx.Reset()
+	tx.Type = vufs.Tcreate
+	tx.Fid = 3
+	tx.Tag = 1
+	tx.Name = name
+	tx.Mode = 0
+	tx.Perm = vufs.Perm(0644)
+	rx := writeBadTestFcall(t, c, tx)
 	if rx.Ename != "already exists" {
 		t.Fatalf("expected '%s', got '%s'", "already exists", rx.Ename)
 	}
@@ -266,8 +214,6 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	//fs.Chatty(true)
-
 	// Walk to file system root to create fid for subdirectory we are creating.
 	// Can't use root fid, as Tcreate moves the fid to reference the newly created file.
 	dirfid := uint32(2)
@@ -278,16 +224,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tx.Newfid = dirfid
 	tx.Tag = tag
 	tx.Wname = []string{}
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		t.Fatalf("Twalk failed: %v", err)
-	}
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("reading Rwalk failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Errorf("Twalk returned error: '%s'", rx.Ename)
-	}
+	writeTestFcall(t, c, tx)
 
 	// Create /testdir.
 	tx.Reset()
@@ -297,32 +234,14 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tx.Name = "testdir"
 	tx.Mode = vufs.OREAD
 	tx.Perm = vufs.Perm(0700) | vufs.DMDIR
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		t.Fatalf("Tcreate failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("reading Rcreate failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Fatalf("Tcreate returned error: '%s'", rx.Ename)
-	}
+	writeTestFcall(t, c, tx)
 
 	// Clunk the new directory, as a walk will fail on an open fid.
 	tx.Reset()
 	tx.Type = vufs.Tclunk
 	tx.Fid = dirfid
 	tx.Tag = tag
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		t.Fatalf("Tclunk failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("reading Rclunk failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Fatalf("Tclunk returned error: '%s'", rx.Ename)
-	}
+	writeTestFcall(t, c, tx)
 
 	// Walk to the new directory to get a fid for the subsequent create call.
 	tx.Reset()
@@ -331,16 +250,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tx.Newfid = dirfid
 	tx.Tag = tag
 	tx.Wname = []string{"testdir"}
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		t.Fatalf("Twalk failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("reading Rwalk failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Errorf("Twalk returned error: '%s'", rx.Ename)
-	}
+	writeTestFcall(t, c, tx)
 
 
 	// Create file /testdir/test.txt.  We can use dirfid, as it points to parent directory.
@@ -351,27 +261,12 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tx.Name = "test.txt"
 	tx.Mode = vufs.OREAD
 	tx.Perm = vufs.Perm(0666)
-	if err := vufs.WriteFcall(c, tx); err != nil {
-		t.Fatalf("Tcreate failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("reading Rcreate failed: %v", err)
-	}
-	if rx.Type == vufs.Rerror {
-		t.Fatalf("Tcreate returned error: '%s'", rx.Ename)
-	}
+	writeTestFcall(t, c, tx)
+
 
 	// Test that file perm is 0600 (perms are clamped by parent dir)
 	tx = &vufs.Fcall{Type: vufs.Tstat, Fid: dirfid, Tag: 1}
-	err = vufs.WriteFcall(c, tx)
-	if err != nil {
-		t.Fatalf("Tstat write failed: %v", err)
-	}
-	rx, err = vufs.ReadFcall(c)
-	if err != nil {
-		t.Errorf("Rstat read failed: %v", err)
-	}
+	rx := writeTestFcall(t, c, tx)
 	dir, err := vufs.UnmarshalDir(rx.Stat)
 	if err != nil {
 		t.Fatalf("UnmarshalDir failed: %v", rx.Ename)
@@ -393,6 +288,7 @@ func TestFailIfFileUsesMagicExtension(t *testing.T) {
 
 	uid := "mark"
 	fid := uint32(1)
+	newfid := uint32(2)
 	fs, c := setup_create_test(t, fid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
@@ -400,21 +296,27 @@ func TestFailIfFileUsesMagicExtension(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	//fs.Chatty(true)
+	// Walk to root directory first so we don't lose the root fid.
+	tx := new(vufs.Fcall)
+	tx.Type = vufs.Twalk
+	tx.Fid = fid
+	tx.Newfid = newfid
+	tx.Tag = 1
+	tx.Wname = []string{}
+	writeTestFcall(t, c, tx)
 
-	name := "testcreate.vufs"
-	tag := uint16(1)
-	err = createFile(c, name, fid, uint32(2), tag, false)
-	if err != nil {
-		t.Fatalf("Tcreate failed: %v", err)
-	}
+	// Create a file with the "magic" .vufs extension.
+	tx.Reset()
+	tx.Type = vufs.Tcreate
+	tx.Fid = newfid
+	tx.Tag = 1
+	tx.Name = "testcreate.vufs"
+	tx.Mode = 0
+	tx.Perm = vufs.Perm(0644)
+	rx := writeBadTestFcall(t, c, tx)
 
-	rx, err := vufs.ReadFcall(c)
-	if err != nil {
-		t.Fatalf("Rcreate read failed: %v", err)
-	}
-	if rx.Type != vufs.Rerror {
-		t.Fatalf("Tcreate should fail if file uses magic 'vufs' extension.")
+	if rx.Ename != "invalid file name" {
+		t.Fatalf("expected '%s', got '%s'", "invalid file name", rx.Ename)
 	}
 }
 
