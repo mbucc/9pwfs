@@ -102,8 +102,8 @@ clunk
   [x] After a clunk, the fid can be reused on the connection.
 
 write
-  [] fid must be opened for writing
-  [] directories may not be written
+  [x] fid must be opened for writing
+  [x] directories may not be written
   [] for QTAPPEND files, offset is ignored
 
 open
@@ -130,6 +130,7 @@ read
   [] if offset > file size, a count of zero bytes read is returned
   [] the offset sent must point to the beginning of a directory entry;
     for example, zero.  or zero plus bytes returned from first read.
+
 remove
   [] remove the file represented by fid and clunk fid
   [] requres write perm in parent directory

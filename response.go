@@ -370,9 +370,17 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 
 func (vu *VuFs) rwrite(r *ConnFcall) string {
 
-	_, found := r.conn.fids[r.fc.Fid]
+	fid, found := r.conn.fids[r.fc.Fid]
 	if !found {
 		return "fid not found"
+	}
+
+	if fid.mode & OWRITE == 0 {
+		return "not opened for writing"
+	}
+
+	if fid.file.Qid.Type&QTDIR != 0 {
+		return "can't write to a directory"
 	}
 
 	return ""
