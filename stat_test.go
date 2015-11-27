@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func setup_stat_test(t *testing.T, fid uint32, rootdir string) (*vufs.VuFs, net.Conn) {
+func setupStatTest(t *testing.T, fid uint32, rootdir string) (*vufs.VuFs, net.Conn) {
 
 	fs := vufs.New(rootdir)
 	err := fs.Start("tcp", vufs.DEFAULTPORT)
@@ -87,7 +87,7 @@ func TestStat(t *testing.T) {
 	defer os.RemoveAll(rootdir)
 
 	fid := uint32(1)
-	fs, c := setup_stat_test(t, fid, rootdir)
+	fs, c := setupStatTest(t, fid, rootdir)
 	if fs == nil || c == nil {
 		return
 	}

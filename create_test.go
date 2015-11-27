@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func setup_create_test(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs, net.Conn) {
+func setupCreateTest(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs, net.Conn) {
 
 	// Start server and create connection.
 	fs := vufs.New(rootdir)
@@ -91,7 +91,7 @@ func TestCreate(t *testing.T) {
 	uid := "mark"
 	fid := uint32(1)
 	newfid := uint32(2)
-	fs, c := setup_create_test(t, fid, rootdir, uid)
+	fs, c := setupCreateTest(t, fid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
 	}
@@ -145,7 +145,7 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 
 	uid := "mark"
 	rootfid := uint32(1)
-	fs, c := setup_create_test(t, rootfid, rootdir, uid)
+	fs, c := setupCreateTest(t, rootfid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
 	}
@@ -207,7 +207,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 
 	uid := "mark"
 	rootfid := uint32(1)
-	fs, c := setup_create_test(t, rootfid, rootdir, uid)
+	fs, c := setupCreateTest(t, rootfid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
 	}
@@ -289,7 +289,7 @@ func TestFailIfFileUsesMagicExtension(t *testing.T) {
 	uid := "mark"
 	fid := uint32(1)
 	newfid := uint32(2)
-	fs, c := setup_create_test(t, fid, rootdir, uid)
+	fs, c := setupCreateTest(t, fid, rootdir, uid)
 	if fs == nil || c == nil {
 		return
 	}

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func setup_attach_test(t *testing.T) (*vufs.VuFs, net.Conn) {
+func setupAttachTest(t *testing.T) (*vufs.VuFs, net.Conn) {
 
 	fs := vufs.New(".")
 	err := fs.Start("tcp", vufs.DEFAULTPORT)
@@ -56,7 +56,7 @@ func setup_attach_test(t *testing.T) (*vufs.VuFs, net.Conn) {
 
 func TestAttach(t *testing.T) {
 
-	fs, c := setup_attach_test(t)
+	fs, c := setupAttachTest(t)
 	if fs == nil || c == nil {
 		return
 	}
