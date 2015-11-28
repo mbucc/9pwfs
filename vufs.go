@@ -365,6 +365,7 @@ func New(root string) *VuFs {
 		Twalk:  vu.rwalk,
 		Tclunk:  vu.rclunk,
 		Twrite:  vu.rwrite,
+		Tread:  vu.rread,
 	}
 
 	return vu

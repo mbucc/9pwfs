@@ -375,7 +375,7 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return "fid not found"
 	}
 
-	if fid.mode & OWRITE == 0 {
+	if fid.mode&OWRITE == 0 {
 		return "not opened for writing"
 	}
 
@@ -383,22 +383,35 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return "can't write to a directory"
 	}
 
+	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
+		return "permission denied"
+	}
+
+	n, err := fid.file.handle.WriteAt(r.fc.Data, int64(r.fc.Offset))
+	rc.Count = uint32(n)
+	if err != nil {
+		return err.Error()
+	}
+
 	return ""
-	/*
-		fid := req.Fid.Aux.(*Fid)
-		tc := req.Tc
-		err := fid.stat()
-		if err != nil {
-			req.RespondError(err)
-			return
-		}
+}
 
-		n, e := fid.file.WriteAt(tc.Data, int64(tc.Offset))
-		if e != nil {
-			req.RespondError(toError(e))
-			return
-		}
 
-		req.RespondRwrite(uint32(n))
-	*/
+func (vu *VuFs) rread(r *ConnFcall) string {
+
+	fid, found := r.conn.fids[r.fc.Fid]
+	if !found {
+		return "fid not found"
+	}
+
+	if !CheckPerm(fid.file, fid.uid, DMREAD) {
+		return "permission denied"
+	}
+
+	_, err := fid.file.handle.ReadAt(rc.Data[:r.fc.Count], int64(r.fc.Offset))
+	if err != nil {
+		return err.Error()
+	}
+
+	return ""
 }
