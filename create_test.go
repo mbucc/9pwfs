@@ -12,6 +12,52 @@ import (
 	"testing"
 )
 
+type testFile struct {
+	name string
+	walknames []string
+	parentfid uint32
+	newfid uint32
+	perm vufs.Perm
+	mode uint8
+	bad bool
+}
+
+func (tf *testFile) create(t *testing.T, c net.Conn) *vufs.Fcall {
+
+	// Walk to root directory first so we don't lose the root fid.
+	tx := new(vufs.Fcall)
+	tx.Type = vufs.Twalk
+	tx.Fid = tf.parentfid
+	tx.Newfid = tf.newfid
+	tx.Tag = 1
+	tx.Wname = tf.walknames
+	writeTestFcall(t, c, tx)
+
+	tx.Reset()
+	tx.Type = vufs.Tcreate
+	tx.Fid = tf.newfid
+	tx.Tag = 1
+	tx.Name = tf.name
+	tx.Mode = tf.mode
+	tx.Perm = tf.perm
+
+	if tf.bad {
+		return writeBadTestFcall(t, c, tx)
+	} else {
+		return writeTestFcall(t, c, tx)
+	}
+}
+
+func (tf *testFile) reset() {
+	tf.name = ""
+	tf.walknames = make([]string, 0)
+	tf.parentfid = uint32(0)
+	tf.newfid = uint32(0)
+	tf.perm = vufs.Perm(0)
+	tf.mode = uint8(0)
+	tf.bad = false	
+}
+
 func setupCreateTest(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs, net.Conn) {
 
 	// Start server and create connection.
@@ -54,30 +100,6 @@ func setupCreateTest(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs,
 
 }
 
-func createFile(t *testing.T, c net.Conn, name string, fid, newfid uint32, tag uint16, isdir bool) *vufs.Fcall {
-
-	// Walk to root directory first so we don't lose the root fid.
-	tx := new(vufs.Fcall)
-	tx.Type = vufs.Twalk
-	tx.Fid = fid
-	tx.Newfid = newfid
-	tx.Tag = tag
-	tx.Wname = []string{}
-	writeTestFcall(t, c, tx)
-
-	tx.Type = vufs.Tcreate
-	tx.Fid = newfid
-	tx.Tag = tag
-	tx.Name = name
-	tx.Mode = 0
-	if isdir {
-		tx.Perm = vufs.Perm(0775) | vufs.DMDIR
-	} else {
-		tx.Perm = vufs.Perm(0644)
-	}
-	return writeTestFcall(t, c, tx)
-
-}
 
 // Can adm create a subdirectory off root?   (Yes.)
 func TestCreate(t *testing.T) {
@@ -98,10 +120,15 @@ func TestCreate(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	name := "testcreate.txt"
-	tag := uint16(1)
-	rx := createFile(t, c, name, fid, newfid, tag, false)
-
+	tf := new(testFile)
+	tf.name = "testcreate.txt"
+	tf.walknames = make([]string, 0)
+	tf.parentfid = fid
+	tf.newfid = newfid
+	tf.perm = vufs.Perm(0644)
+	tf.mode = vufs.OREAD
+	rx := tf.create(t, c)
+	
 	// Qid should be loaded
 	if rx.Qid.Path == 0 {
 		t.Error("Qid.Path was zero")
@@ -152,45 +179,19 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	name := "testcreate.txt"
+	tf := new(testFile)
+	tf.name = "testcreate.txt"
+	tf.walknames = make([]string, 0)
+	tf.parentfid = rootfid
+	tf.newfid = 2
+	tf.perm = vufs.Perm(0644)
+	tf.mode = vufs.OREAD
 
-	// Walk to root directory first so we don't lose the root fid.
-	tx := new(vufs.Fcall)
-	tx.Type = vufs.Twalk
-	tx.Fid = rootfid
-	tx.Newfid = 2
-	tx.Tag = 1
-	tx.Wname = []string{}
-	writeTestFcall(t, c, tx)
+	tf.create(t, c)
 
-	// Create file.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = 2
-	tx.Tag = 1
-	tx.Name = name
-	tx.Mode = 0
-	tx.Perm = vufs.Perm(0644)
-	writeTestFcall(t, c, tx)
+	tf.bad = true
+	rx := tf.create(t, c)
 
-	// Walk to root directory (again, prepping for create call).
-	tx.Reset()
-	tx.Type = vufs.Twalk
-	tx.Fid = rootfid
-	tx.Newfid = 3
-	tx.Tag = 1
-	tx.Wname = []string{}
-	writeTestFcall(t, c, tx)
-
-	// Try to create same file again.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = 3
-	tx.Tag = 1
-	tx.Name = name
-	tx.Mode = 0
-	tx.Perm = vufs.Perm(0644)
-	rx := writeBadTestFcall(t, c, tx)
 	if rx.Ename != "already exists" {
 		t.Fatalf("expected '%s', got '%s'", "already exists", rx.Ename)
 	}
@@ -214,57 +215,36 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	// Walk to file system root to create fid for subdirectory we are creating.
-	// Can't use root fid, as Tcreate moves the fid to reference the newly created file.
+	// Create '/testdir', with 0700 permissions.
 	dirfid := uint32(2)
-	tag := uint16(1)
-	tx := new(vufs.Fcall)
-	tx.Type = vufs.Twalk
-	tx.Fid = rootfid
-	tx.Newfid = dirfid
-	tx.Tag = tag
-	tx.Wname = []string{}
-	writeTestFcall(t, c, tx)
-
-	// Create /testdir.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = dirfid
-	tx.Tag = tag
-	tx.Name = "testdir"
-	tx.Mode = vufs.OREAD
-	tx.Perm = vufs.Perm(0700) | vufs.DMDIR
-	writeTestFcall(t, c, tx)
+	tf := new(testFile)
+	tf.name = "testdir"
+	tf.walknames = make([]string, 0)
+	tf.parentfid = rootfid
+	tf.newfid = dirfid
+	tf.perm = vufs.Perm(0700) | vufs.DMDIR
+	tf.mode = vufs.OREAD
+	tf.create(t, c)
 
 	// Clunk the new directory, as a walk will fail on an open fid.
-	tx.Reset()
+	tx := new(vufs.Fcall)
 	tx.Type = vufs.Tclunk
 	tx.Fid = dirfid
-	tx.Tag = tag
+	tx.Tag = 1
 	writeTestFcall(t, c, tx)
 
-	// Walk to the new directory to get a fid for the subsequent create call.
-	tx.Reset()
-	tx.Type = vufs.Twalk
-	tx.Fid = rootfid
-	tx.Newfid = dirfid
-	tx.Tag = tag
-	tx.Wname = []string{"testdir"}
-	writeTestFcall(t, c, tx)
+	// Create '/testdir/test.txt'
+	tf.reset()
+	tf.name = "test.txt"
+	tf.walknames = []string{"testdir"}
+	tf.parentfid = rootfid
+	tf.newfid = dirfid
+	tf.perm = vufs.Perm(0666)
+	tf.mode = vufs.OREAD
+	tf.create(t, c)
 
 
-	// Create file /testdir/test.txt.  We can use dirfid, as it points to parent directory.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = dirfid
-	tx.Tag = tag
-	tx.Name = "test.txt"
-	tx.Mode = vufs.OREAD
-	tx.Perm = vufs.Perm(0666)
-	writeTestFcall(t, c, tx)
-
-
-	// Test that file perm is 0600 (perms are clamped by parent dir)
+	// Test that file permissions are 0600
 	tx = &vufs.Fcall{Type: vufs.Tstat, Fid: dirfid, Tag: 1}
 	rx := writeTestFcall(t, c, tx)
 	dir, err := vufs.UnmarshalDir(rx.Stat)
@@ -286,34 +266,23 @@ func TestFailIfFileUsesMagicExtension(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
-	uid := "mark"
-	fid := uint32(1)
-	newfid := uint32(2)
-	fs, c := setupCreateTest(t, fid, rootdir, uid)
+	fs, c := setupCreateTest(t, 1, rootdir, "mark")
 	if fs == nil || c == nil {
 		return
 	}
 	defer fs.Stop()
 	defer c.Close()
 
-	// Walk to root directory first so we don't lose the root fid.
-	tx := new(vufs.Fcall)
-	tx.Type = vufs.Twalk
-	tx.Fid = fid
-	tx.Newfid = newfid
-	tx.Tag = 1
-	tx.Wname = []string{}
-	writeTestFcall(t, c, tx)
+	tf := new(testFile)
+	tf.name = "testcreate.vufs"
+	tf.walknames = make([]string, 0)
+	tf.parentfid = 1
+	tf.newfid = 2
+	tf.perm = vufs.Perm(0644)
+	tf.mode = vufs.OREAD
+	tf.bad = true
 
-	// Create a file with the "magic" .vufs extension.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = newfid
-	tx.Tag = 1
-	tx.Name = "testcreate.vufs"
-	tx.Mode = 0
-	tx.Perm = vufs.Perm(0644)
-	rx := writeBadTestFcall(t, c, tx)
+	rx := tf.create(t, c)
 
 	if rx.Ename != "invalid file name" {
 		t.Fatalf("expected '%s', got '%s'", "invalid file name", rx.Ename)
