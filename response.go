@@ -409,7 +409,6 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 	return ""
 }
 
-
 func (vu *VuFs) rread(r *ConnFcall) string {
 
 	fid, found := r.conn.fids[r.fc.Fid]
@@ -423,6 +422,12 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 
 	if !CheckPerm(fid.file, fid.uid, DMREAD) {
 		return "permission denied"
+	}
+
+	if r.fc.Offset >= fid.file.Length {
+		rc.Data = rc.Data[:0]
+		rc.Count = 0
+		return ""
 	}
 
 	rc.Data = rc.Data[:r.fc.Count]
