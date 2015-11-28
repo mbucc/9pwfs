@@ -58,6 +58,53 @@ func (tf *testFile) reset() {
 	tf.bad = false	
 }
 
+type testConfig struct {
+	rootdir string
+	uid string
+	rootfid uint32
+}
+
+func connectAndAttach(t *testing.T, ts *testConfig) (*vufs.VuFs, net.Conn) {
+
+	fs := vufs.New(ts.rootdir)
+	err := fs.Start("tcp", vufs.DEFAULTPORT)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	c, err := net.Dial("tcp", vufs.DEFAULTPORT)
+	if err != nil {
+		t.Fatalf("connection failed: %v", err)
+	}
+
+	tx := new(vufs.Fcall)
+	tx.Type = vufs.Tversion
+	tx.Tag = vufs.NOTAG
+	tx.Msize = 131072
+	tx.Version = vufs.VERSION9P
+	rx := writeTestFcall(t, c, tx)
+	if rx.Version != vufs.VERSION9P {
+		t.Fatalf("bad version response, expected '%s' got '%s'", vufs.VERSION9P, rx.Version)
+	}
+
+	// Attach to root directory.
+	tx.Reset()
+	tx.Type = vufs.Tattach
+	tx.Fid = ts.rootfid
+	tx.Tag = 1
+	tx.Afid = vufs.NOFID
+	tx.Uname = ts.uid
+	tx.Aname = "/"
+	rx = writeTestFcall(t, c, tx)
+
+	//fs.Chatty(true)
+
+
+	return fs, c
+
+
+}
+
+/*
 func setupCreateTest(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs, net.Conn) {
 
 	// Start server and create connection.
@@ -99,7 +146,7 @@ func setupCreateTest(t *testing.T, fid uint32, rootdir, uid string) (*vufs.VuFs,
 	return fs, c
 
 }
-
+*/
 
 // Can adm create a subdirectory off root?   (Yes.)
 func TestCreate(t *testing.T) {
@@ -110,10 +157,14 @@ func TestCreate(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
-	uid := "mark"
-	fid := uint32(1)
+
 	newfid := uint32(2)
-	fs, c := setupCreateTest(t, fid, rootdir, uid)
+
+	config := new(testConfig)
+	config.rootdir = rootdir
+	config.rootfid = 1
+	config.uid = "mark"
+	fs, c := connectAndAttach(t, config)
 	if fs == nil || c == nil {
 		return
 	}
@@ -123,7 +174,7 @@ func TestCreate(t *testing.T) {
 	tf := new(testFile)
 	tf.name = "testcreate.txt"
 	tf.walknames = make([]string, 0)
-	tf.parentfid = fid
+	tf.parentfid = config.rootfid
 	tf.newfid = newfid
 	tf.perm = vufs.Perm(0644)
 	tf.mode = vufs.OREAD
@@ -143,8 +194,8 @@ func TestCreate(t *testing.T) {
 	}
 
 	// User of file should be same as user passed in
-	if dir.Uid != uid {
-		t.Errorf("wrong user, expected '%s' got '%s'", uid, dir.Uid)
+	if dir.Uid != config.uid {
+		t.Errorf("wrong user, expected '%s' got '%s'", config.uid, dir.Uid)
 	}
 
 	if dir.Name != "testcreate.txt" {
@@ -170,9 +221,11 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
-	uid := "mark"
-	rootfid := uint32(1)
-	fs, c := setupCreateTest(t, rootfid, rootdir, uid)
+	config := new(testConfig)
+	config.rootdir = rootdir
+	config.rootfid = 1
+	config.uid = "mark"
+	fs, c := connectAndAttach(t, config)
 	if fs == nil || c == nil {
 		return
 	}
@@ -182,7 +235,7 @@ func TestFailIfFileAlreadyExists(t *testing.T) {
 	tf := new(testFile)
 	tf.name = "testcreate.txt"
 	tf.walknames = make([]string, 0)
-	tf.parentfid = rootfid
+	tf.parentfid = config.rootfid
 	tf.newfid = 2
 	tf.perm = vufs.Perm(0644)
 	tf.mode = vufs.OREAD
@@ -206,9 +259,11 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
-	uid := "mark"
-	rootfid := uint32(1)
-	fs, c := setupCreateTest(t, rootfid, rootdir, uid)
+	config := new(testConfig)
+	config.rootdir = rootdir
+	config.rootfid = 1
+	config.uid = "mark"
+	fs, c := connectAndAttach(t, config)
 	if fs == nil || c == nil {
 		return
 	}
@@ -220,7 +275,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tf := new(testFile)
 	tf.name = "testdir"
 	tf.walknames = make([]string, 0)
-	tf.parentfid = rootfid
+	tf.parentfid = config.rootfid
 	tf.newfid = dirfid
 	tf.perm = vufs.Perm(0700) | vufs.DMDIR
 	tf.mode = vufs.OREAD
@@ -237,7 +292,7 @@ func TestClampPermissionsToParentDirectory(t *testing.T) {
 	tf.reset()
 	tf.name = "test.txt"
 	tf.walknames = []string{"testdir"}
-	tf.parentfid = rootfid
+	tf.parentfid = config.rootfid
 	tf.newfid = dirfid
 	tf.perm = vufs.Perm(0666)
 	tf.mode = vufs.OREAD
@@ -266,10 +321,11 @@ func TestFailIfFileUsesMagicExtension(t *testing.T) {
 	}
 	defer os.RemoveAll(rootdir)
 
-	fs, c := setupCreateTest(t, 1, rootdir, "mark")
-	if fs == nil || c == nil {
-		return
-	}
+	config := new(testConfig)
+	config.rootdir = rootdir
+	config.rootfid = 1
+	config.uid = "mark"
+	fs, c := connectAndAttach(t, config)
 	defer fs.Stop()
 	defer c.Close()
 
