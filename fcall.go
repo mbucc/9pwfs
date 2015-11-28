@@ -350,6 +350,7 @@ func UnmarshalFcall(b []byte) (f *Fcall, err error) {
 			panic(1)
 		}
 		f.Data = b
+		f.Count = uint32(len(b))
 		b = nil
 
 	case Rwrite:
@@ -478,7 +479,7 @@ func (f *Fcall) Reset() {
 	f.Count   = 0
 	f.Stat = make([]byte, 0, 0)
 
-	// Keep memory allocated but set slice length to zero.
+	// Clear slice while keeping memory allocated.
 	f.Data = f.Data[:0]
 }
 

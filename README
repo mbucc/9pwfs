@@ -60,21 +60,21 @@ version
 attach
   [x] If fid is already used (on this connection), return an error.
   [x] If server does not require authentication, auth returns an error.
-  [] (Not planned) Client can select attach to a "file tree" identified by the aname parameter.
-  [] (Not planned) If Client wants to authenticate, attach negotiates authentication via afid parameter.
-  [] (Not planned) If it does, auth returns aqid which is used to communicate credentials.
+  [] Client can select attach to a "file tree" identified by the aname parameter.
+  [] If Client wants to authenticate, attach negotiates authentication via afid parameter.
   [x] Attach identifies the user.
 
 stat
   [x] stat requires no special permissions.
-  [] last change in content does not include changes by wstat messages
-  [] file: mtime = most recent create, open with trunc, or write
-  [] file: atime = max(most recent read, mtime)
-  [] dir: mtime = most recent remove, create, or wstat of file in dir.
-  [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
-  [] muid = user that most recently changed the mtime
   [x] directories, by convention, have a length of zero
   [] stat response is limited to 65535 bytes
+  [] last change in content does not include changes by wstat messages
+  [x] file: mtime = most recent create, open with trunc, or write
+  [x] file: atime = max(most recent read, mtime)
+  [x] file: muid = user that most recently changed the mtime
+  [] dir: mtime = most recent remove, create, or wstat of file in dir.
+  [] dir: atime = max(read, mtime, attach|walk|create), last three whether successful or not
+  [] dir: muid = user that most recently changed the mtime
 
 create
   [x] Creating a file takes owner of request and group of directory.
@@ -107,7 +107,7 @@ write
   [] for QTAPPEND files, offset is ignored
 
 read
-  [] fid must be opened for reading.
+  [X] fid must be opened for reading.
   [] if offset > file size, a count of zero bytes read is returned
   [] the offset sent must point to the beginning of a directory entry
 
@@ -128,8 +128,6 @@ flush
   * The Tflush includes two tags: oldtag (the msg to flush) and tag (the flush msg itself)
   * If the oldtag Rmsg comes back before the Rflush, the trx was not flushed.
   * ... and more details.
-
-
 
 remove
   [] remove the file represented by fid and clunk fid

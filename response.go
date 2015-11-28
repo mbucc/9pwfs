@@ -400,6 +400,12 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return err.Error()
 	}
 
+	now := uint32(time.Now().Unix())
+	fid.file.Atime = now
+	fid.file.Mtime = now
+	// BUG(mbucc) Muid info is lost on server restart.
+	fid.file.Muid = fid.uid
+
 	return ""
 }
 
@@ -425,6 +431,9 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		return err.Error()
 	}
 	rc.Data = rc.Data[:sz]
+	rc.Count = uint32(sz)
+
+	fid.file.Atime = uint32(time.Now().Unix())
 
 	return ""
 }

@@ -46,68 +46,6 @@ func writeBadTestFcall(t *testing.T, c net.Conn, tx *vufs.Fcall) (rx *vufs.Fcall
 	return
 }
 
-// Create the given file, owned by the given user.
-func setupWriteTest(t *testing.T, rootfid, newfid uint32, rootdir, uid, filename string) (*vufs.VuFs, net.Conn) {
-
-	// Start server and create connection.
-	fs := vufs.New(rootdir)
-	err := fs.Start("tcp", vufs.DEFAULTPORT)
-	if err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
-	c, err := net.Dial("tcp", vufs.DEFAULTPORT)
-	if err != nil {
-		t.Fatalf("connection failed: %v", err)
-	}
-	//fs.Chatty(true)
-
-	// Send version message.
-	tx := &vufs.Fcall{
-		Type:    vufs.Tversion,
-		Tag:     vufs.NOTAG,
-		Msize:   131072,
-		Version: vufs.VERSION9P}
-	rx := writeTestFcall(t, c, tx)
-	if rx.Version != vufs.VERSION9P {
-		t.Fatalf("bad version response, expected '%s' got '%s'", vufs.VERSION9P, rx.Version)
-	}
-
-	// Attach to root directory.
-	tx.Reset()
-	tx.Type = vufs.Tattach
-	tx.Fid = rootfid
-	tx.Tag = 1
-	tx.Afid = vufs.NOFID
-	tx.Uname = uid
-	tx.Aname = "/"
-	rx = writeTestFcall(t, c, tx)
-
-	// Walk to root directory first so we don't lose the root fid.
-	tx.Reset()
-	tx.Type = vufs.Twalk
-	tx.Fid = rootfid
-	tx.Newfid = newfid
-	tx.Tag = 1
-	tx.Wname = []string{}
-	rx = writeTestFcall(t, c, tx)
-
-	// Create file.
-	tx.Reset()
-	tx.Type = vufs.Tcreate
-	tx.Fid = newfid
-	tx.Tag = 1
-	tx.Name = filename
-	tx.Mode = 0
-	tx.Perm = vufs.Perm(0644)
-	rx = writeTestFcall(t, c, tx)
-	if rx.Qid.Path == 0 {
-		t.Fatalf("Qid.Path was zero")
-	}
-
-	return fs, c
-
-}
-
 func TestFidMustExistForWriting(t *testing.T) {
 
 	rootdir, err := ioutil.TempDir("", "testwrite")
@@ -123,6 +61,7 @@ func TestFidMustExistForWriting(t *testing.T) {
 	fs, c := connectAndAttach(t, config)
 	defer fs.Stop()
 	defer c.Close()
+
 
 	tf := new(testFile)
 	tf.name = "testwrite.txt"
@@ -152,7 +91,7 @@ func TestWriteWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
-	//defer os.RemoveAll(rootdir)
+	defer os.RemoveAll(rootdir)
 
 	config := new(testConfig)
 	config.rootdir = rootdir
@@ -161,6 +100,8 @@ func TestWriteWorks(t *testing.T) {
 	fs, c := connectAndAttach(t, config)
 	defer fs.Stop()
 	defer c.Close()
+
+	//fs.Chatty(true)
 
 	tf := new(testFile)
 	tf.name = "testwrite.txt"
@@ -190,6 +131,10 @@ func TestWriteWorks(t *testing.T) {
 
 	if !bytes.Equal(rx.Data, data) {
 		t.Errorf("bad data\nexp: '%x (%s)'\nact '%x (%s0'", data, data, rx.Data, rx.Data)
+	}
+
+	if rx.Count != uint32(len(data)) {
+		t.Errorf("wrong count: exp %d, got %d", len(data), rx.Count)
 	}
 
 }
