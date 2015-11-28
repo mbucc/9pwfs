@@ -152,7 +152,7 @@ func TestWriteWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
-	defer os.RemoveAll(rootdir)
+	//defer os.RemoveAll(rootdir)
 
 	config := new(testConfig)
 	config.rootdir = rootdir
@@ -189,7 +189,7 @@ func TestWriteWorks(t *testing.T) {
 	rx := writeTestFcall(t, c, tx)
 
 	if !bytes.Equal(rx.Data, data) {
-		t.Errorf("bad data: expected '%s', got '%s'", data, rx.Data)
+		t.Errorf("bad data\nexp: '%x (%s)'\nact '%x (%s0'", data, data, rx.Data, rx.Data)
 	}
 
 }

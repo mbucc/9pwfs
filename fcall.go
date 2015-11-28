@@ -454,11 +454,11 @@ func (f *Fcall) String() string {
 	return fmt.Sprintf("unknown type %d", f.Type)
 }
 
+// Don't reset Data 
 func (f *Fcall) Reset() {
 	f.Type = 0
 	f.Fid  = 0
 	f.Tag     = 0
-	f.Msize   = 0
 	f.Version = ""
 	f.Oldtag  = 0
 	f.Ename   = ""
@@ -476,8 +476,10 @@ func (f *Fcall) Reset() {
 	f.Wqid   = make([]Qid, 0, 0)
 	f.Offset  = 0
 	f.Count   = 0
-	f.Data   =make([]byte, 0, 0)
 	f.Stat = make([]byte, 0, 0)
+
+	// Keep memory allocated but set slice length to zero.
+	f.Data = f.Data[:0]
 }
 
 

@@ -2,6 +2,7 @@ package vufs
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,8 @@ func (vu *VuFs) rversion(r *ConnFcall) string {
 	if msz > MAX_MSIZE {
 		msz = MAX_MSIZE
 	}
+
+	rc.Data = make([]byte, 0, msz)
 
 	// A version message resets the session, which means
 	// we drain any pending fcalls.
@@ -375,6 +378,10 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return "fid not found"
 	}
 
+	if !fid.open {
+		return "not open"
+	}
+
 	if fid.mode&OWRITE == 0 {
 		return "not opened for writing"
 	}
@@ -404,14 +411,20 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		return "fid not found"
 	}
 
+	if !fid.open {
+		return "not open"
+	}
+
 	if !CheckPerm(fid.file, fid.uid, DMREAD) {
 		return "permission denied"
 	}
 
-	_, err := fid.file.handle.ReadAt(rc.Data[:r.fc.Count], int64(r.fc.Offset))
-	if err != nil {
+	rc.Data = rc.Data[:r.fc.Count]
+	sz, err := fid.file.handle.ReadAt(rc.Data, int64(r.fc.Offset))
+	if err != nil && err != io.EOF {
 		return err.Error()
 	}
+	rc.Data = rc.Data[:sz]
 
 	return ""
 }
