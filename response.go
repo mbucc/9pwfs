@@ -300,7 +300,7 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 		return fmt.Sprintf("fid %d not found", tx.Fid)
 	}
 
-	if len(tx.Wname) > 0 && fid.file.Type&QTDIR == 0 {
+	if len(tx.Wname) > 0 && ! fid.file.isDir() {
 		return "not a directory"
 	}
 
@@ -334,7 +334,7 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 				}
 			}
 
-			if f.Type&QTDIR != 0 && !CheckPerm(f, fid.uid, DMEXEC) {
+			if f.isDir() && !CheckPerm(f, fid.uid, DMEXEC) {
 				if i == 0 {
 					return "permission denied"
 				} else {
@@ -389,7 +389,7 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return "not opened for writing"
 	}
 
-	if fid.file.Qid.Type&QTDIR != 0 {
+	if fid.file.isDir() {
 		return "can't write to a directory"
 	}
 
@@ -431,7 +431,7 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		return "invalid count"
 	}
 
-	if fid.file.Type&QTDIR != 0 {
+	if fid.file.isDir() {
 
 		keys := make([]string, 0, len(fid.file.children))
 		for k := range fid.file.children {
@@ -483,7 +483,7 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 	}
 
 	m := r.fc.Mode & 3
-	if fid.file.Type&QTDIR != 0 && m != OREAD {
+	if fid.file.isDir() && m != OREAD {
 		return "invalid mode for a directory"
 	}
 	if  m&OWRITE == OWRITE {
@@ -510,7 +510,7 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 	if fid.file.handle == nil {
 		var fp *os.File
 
-		if fid.file.Type&QTDIR != 0 {
+		if fid.file.isDir() {
 			fp, err = os.OpenFile(fid.file.ospath, os.O_RDONLY, 0)
 			if err != nil {
 				return err.Error()

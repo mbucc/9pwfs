@@ -70,6 +70,12 @@ type VuFs struct {
 	tree          *Tree
 }
 
+
+// Return true if file is a directory, false otherwise.
+func (fp *File) isDir() bool {
+	return fp.Type&QTDIR != 0;
+}
+
 func (vu *VuFs) Chatty(b bool) {
 	vu.chatty = b
 }
