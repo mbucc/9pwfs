@@ -26,6 +26,11 @@ func writeOwnership(path, uid, gid string) error {
 	return nil
 }
 
+// TODO(mbucc) Decide and enforce what characters are valid in filenames.
+func validFilename(name string) bool {
+	return name != "." && name != ".." && !strings.HasSuffix(name, ".vufs")
+}
+
 // Since we serialize all file operations, we can reuse the same response memory.
 var rc *Fcall = new(Fcall)
 
@@ -89,7 +94,6 @@ func (vu *VuFs) rattach(r *ConnFcall) string {
 		return emsg
 	}
 
-
 	fid := new(Fid)
 	fid.file = vu.tree.root
 	fid.uid = r.fc.Uname
@@ -115,7 +119,6 @@ func (vu *VuFs) rstat(r *ConnFcall) string {
 	}
 	return ""
 }
-
 
 // Vufs only supports READ and WRITE modes.  (CEXEC is equivalent to READ.)
 func checkMode(fc *Fcall) string {
@@ -147,11 +150,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	}
 	parent := fid.file
 
-	if r.fc.Name == "." || r.fc.Name == ".." {
-		return "invalid file name"
-	}
-
-	if strings.HasSuffix(r.fc.Name, ".vufs") {
+	if !validFilename(r.fc.Name) {
 		return "invalid file name"
 	}
 
@@ -159,8 +158,6 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
 		return "permission denied"
 	}
-
-	// TODO(mbucc) Decide and enforce what characters are valid in filenames.
 
 	// File should not already exist.
 	if _, found := parent.children[r.fc.Name]; found {
@@ -320,7 +317,7 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 		return emsg
 	}
 
-	if len(tx.Wname) > 0 && ! fid.file.isDir() {
+	if len(tx.Wname) > 0 && !fid.file.isDir() {
 		return "not a directory"
 	}
 
@@ -444,7 +441,6 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		return "not open"
 	}
 
-
 	rc.Data = rc.Data[:0]
 
 	if r.fc.Count > uint32(cap(rc.Data)) {
@@ -462,18 +458,18 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		offset := r.fc.Offset
 		count := uint64(r.fc.Count)
 		bytesread := uint64(0)
-		for _, k := range(keys) {
+		for _, k := range keys {
 			f := fid.file.children[k]
 			b, _ := f.Bytes()
 			n := uint64(len(b))
-			if bytesread >= offset  && bytesread + n < offset + count {
+			if bytesread >= offset && bytesread+n < offset+count {
 				if len(rc.Data) == 0 && bytesread != offset {
 					return "invalid offset"
 				}
 				rc.Data = append(rc.Data, b...)
 			}
 			bytesread += n
-			if bytesread >= offset + count {
+			if bytesread >= offset+count {
 				break
 			}
 		}
@@ -511,22 +507,22 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 
 	m := r.fc.Mode & 3
 
-	if  m&OWRITE == OWRITE {
+	if m&OWRITE == OWRITE {
 		if !CheckPerm(fid.file, fid.uid, DMWRITE) {
 			return "permission denied"
 		}
 	}
-	if  m&ORDWR == ORDWR {
+	if m&ORDWR == ORDWR {
 		if !CheckPerm(fid.file, fid.uid, DMWRITE) || !CheckPerm(fid.file, fid.uid, DMREAD) {
 			return "permission denied"
 		}
 	}
-	if  m&OREAD == OREAD {
+	if m&OREAD == OREAD {
 		if !CheckPerm(fid.file, fid.uid, DMREAD) {
 			return "permission denied"
 		}
 	}
-	if  m&OEXEC == OEXEC {
+	if m&OEXEC == OEXEC {
 		if !CheckPerm(fid.file, fid.uid, DMEXEC) {
 			return "permission denied"
 		}
@@ -555,8 +551,6 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 
 	return ""
 }
-
-
 
 func (vu *VuFs) rremove(r *ConnFcall) string {
 
@@ -588,3 +582,67 @@ func (vu *VuFs) rremove(r *ConnFcall) string {
 	return ""
 }
 
+func (vu *VuFs) rwstat(r *ConnFcall) string {
+
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
+	}
+
+	dir, err := UnmarshalDir(r.fc.Stat)
+	if err != nil {
+		return err.Error()
+	}
+
+	if dir.Name != "" {
+		if !CheckPerm(fid.file.parent, fid.uid, DMWRITE) {
+			return "permission denied"
+		}
+		if !validFilename(dir.Name) {
+			return "invalid file name"
+		}
+		if _, found := fid.file.parent.children[r.fc.Name]; found {
+			return "already exists"
+		}
+
+		oldp := fid.file.Name
+		newp := filepath.Join(oldp, "..", dir.Name)
+
+		// close file
+		if fid.file.handle != nil {
+			fid.file.handle.Close()
+			if err != nil {
+				return err.Error()
+			}
+			fid.file.handle = nil
+		}
+
+		// move file
+		err = os.Rename(oldp, newp)
+		if err != nil {
+			return err.Error()
+		}
+
+		// move meta file
+		err = os.Rename(oldp+".vufs", newp+".vufs")
+		if err != nil {
+			os.Rename(newp, oldp)
+			return err.Error()
+		}
+
+		// Open "new" file.
+		fid.file.handle, err = os.OpenFile(fid.file.ospath, os.O_RDWR, 0777)
+		if err != nil {
+			os.Rename(newp, oldp)
+			os.Rename(newp+".vufs", oldp+".vufs")
+			return err.Error()
+		}
+
+		// update in-memory data
+		fid.file.ospath = filepath.Join(fid.file.ospath, "..", dir.Name)
+		delete(fid.file.parent.children, oldp)
+		fid.file.parent.children[newp] = fid.file
+	}
+
+	return ""
+}

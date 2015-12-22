@@ -139,7 +139,8 @@ wstat
   [] error if newname = name of other file in directory
   [] mode and mtime can be changed by the file owner or group leader
   [] directory bit cannot be changed
-  [] server may chose to reject length changes on files
+  [] server may choose to reject length changes on files
+  [] It is an error to try and set a directory's length greater than zero.
   [] changing length on an array is an error
   [] gid can be changed by owner if member of new group
   [] gid can be changed by group leader if leader of the new group
