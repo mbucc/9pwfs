@@ -107,17 +107,17 @@ write
   [] for QTAPPEND files, offset is ignored
 
 read
-  [X] fid must be opened for reading.
-  [] if offset > file size, a count of zero bytes read is returned
-  [] the offset sent must point to the beginning of a directory entry
+  [x] fid must be opened for reading.
+  [x] if offset >= file size, a count of zero bytes read is returned
+  [x] the offset sent must point to the beginning of a directory entry
 
 open
   [] OTRUNC truncates file and requires write permission.
   [] if OTRUNC with QTAPPEND, write perm still required but file is not truncated.
   [] ORCLOSE requires permission to modify file's parent directory.
   [] If file is QTEXCL only one client can have one fid open at a time
-  [] The file permissions are not rechecked after it is opened.
-  [] It is an error if the fid is already in use.
+  [x] The file permissions are not rechecked after it is opened.
+  [x] It is an error if the fid is already in use.
   [] iounit field (if non-zero), is the max bytes guaranteed be transferred atomically
   [] (stat): server's may implement a timeout on QTEXCL (at least a minute).
   [] (stat): on QTEXCL timeout, initial fid is denied further I/O
@@ -125,15 +125,14 @@ open
 flush
   [] To interrupt a long read (for example), client can flush that previous request.
   [] Once Rflush is received the oldtag is available for re-use.
-  * The Tflush includes two tags: oldtag (the msg to flush) and tag (the flush msg itself)
-  * If the oldtag Rmsg comes back before the Rflush, the trx was not flushed.
-  * ... and more details.
+  [] The Tflush includes two tags: oldtag (the msg to flush) and tag (the flush msg itself)
+  [] If the oldtag Rmsg comes back before the Rflush, the trx was not flushed.
+  [] more details.
 
 remove
   [] remove the file represented by fid and clunk fid
   [] requres write perm in parent directory
-  [] plan9 removes file immediately, even if open by other clients.
-  * unix typically let's other fids remain usable.
+  [] remove file immediately, even if open by other clients
 
 wstat
   [] name can be changed by anyone with write permission in directory

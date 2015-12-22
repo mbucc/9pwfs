@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -135,7 +136,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return "permission denied"
 	}
 
-	// BUG(mbucc) Check characters used in a new filename.
+	// TODO(mbucc) Decide and enforce what characters are valid in filenames.
 
 	// File should not already exist.
 	_, found = parent.children[r.fc.Name]
@@ -205,6 +206,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 
 	// dir.go:60,72
 	f := new(File)
+	f.ospath = ospath
 	if r.fc.Perm&DMDIR != 0 {
 		f.Qid.Type = QTDIR
 		f.children = make(map[string]*File)
@@ -364,6 +366,7 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 	fid.file.refcnt -= 1
 	if fid.file.refcnt == 0 && fid.file.handle != nil {
 		fid.file.handle.Close()
+		fid.file.handle = nil
 	}
 
 	delete(r.conn.fids, r.fc.Fid)
@@ -390,10 +393,6 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 		return "can't write to a directory"
 	}
 
-	if !CheckPerm(fid.file, fid.uid, DMWRITE) {
-		return "permission denied"
-	}
-
 	n, err := fid.file.handle.WriteAt(r.fc.Data, int64(r.fc.Offset))
 	rc.Count = uint32(n)
 	if err != nil {
@@ -403,8 +402,13 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 	now := uint32(time.Now().Unix())
 	fid.file.Atime = now
 	fid.file.Mtime = now
-	// BUG(mbucc) Muid info is lost on server restart.
+	// BUG(mbucc): Muid info is lost on server restart.
 	fid.file.Muid = fid.uid
+	info, err := fid.file.handle.Stat()
+	if err != nil {
+		return err.Error()
+	}
+	fid.file.Length = uint64(info.Size())
 
 	return ""
 }
@@ -420,25 +424,109 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 		return "not open"
 	}
 
-	if !CheckPerm(fid.file, fid.uid, DMREAD) {
-		return "permission denied"
+
+	rc.Data = rc.Data[:0]
+
+	if r.fc.Count > uint32(cap(rc.Data)) {
+		return "invalid count"
 	}
 
-	if r.fc.Offset >= fid.file.Length {
-		rc.Data = rc.Data[:0]
-		rc.Count = 0
-		return ""
-	}
+	if fid.file.Type&QTDIR != 0 {
 
-	rc.Data = rc.Data[:r.fc.Count]
-	sz, err := fid.file.handle.ReadAt(rc.Data, int64(r.fc.Offset))
-	if err != nil && err != io.EOF {
-		return err.Error()
+		keys := make([]string, 0, len(fid.file.children))
+		for k := range fid.file.children {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		offset := r.fc.Offset
+		count := uint64(r.fc.Count)
+		bytesread := uint64(0)
+		for _, k := range(keys) {
+			f := fid.file.children[k]
+			b, _ := f.Bytes()
+			n := uint64(len(b))
+			if bytesread >= offset  && bytesread + n < offset + count {
+				if len(rc.Data) == 0 && bytesread != offset {
+					return "invalid offset"
+				}
+				rc.Data = append(rc.Data, b...)
+			}
+			bytesread += n
+		}
+	} else {
+
+		if r.fc.Offset >= fid.file.Length {
+			return ""
+		}
+
+		rc.Data = rc.Data[:r.fc.Count]
+		sz, err := fid.file.handle.ReadAt(rc.Data, int64(r.fc.Offset))
+		if err != nil && err != io.EOF {
+			return err.Error()
+		}
+		rc.Data = rc.Data[:sz]
 	}
-	rc.Data = rc.Data[:sz]
-	rc.Count = uint32(sz)
+	rc.Count = uint32(len(rc.Data))
 
 	fid.file.Atime = uint32(time.Now().Unix())
+
+	return ""
+}
+
+func (vu *VuFs) ropen(r *ConnFcall) string {
+	var err error
+
+	fid, found := r.conn.fids[r.fc.Fid]
+	if !found {
+		return "fid not found"
+	}
+
+	m := r.fc.Mode & 3
+	if fid.file.Type&QTDIR != 0 && m != OREAD {
+		return "invalid mode for a directory"
+	}
+	if  m&OWRITE == OWRITE {
+		if !CheckPerm(fid.file, fid.uid, DMWRITE) {
+			return "permission denied"
+		}
+	}
+	if  m&ORDWR == ORDWR {
+		if !CheckPerm(fid.file, fid.uid, DMWRITE) || !CheckPerm(fid.file, fid.uid, DMREAD) {
+			return "permission denied"
+		}
+	}
+	if  m&OREAD == OREAD {
+		if !CheckPerm(fid.file, fid.uid, DMREAD) {
+			return "permission denied"
+		}
+	}
+	if  m&OEXEC == OEXEC {
+		if !CheckPerm(fid.file, fid.uid, DMEXEC) {
+			return "permission denied"
+		}
+	}
+
+	if fid.file.handle == nil {
+		var fp *os.File
+
+		if fid.file.Type&QTDIR != 0 {
+			fp, err = os.OpenFile(fid.file.ospath, os.O_RDONLY, 0)
+			if err != nil {
+				return err.Error()
+			}
+		} else {
+			fp, err = os.OpenFile(fid.file.ospath, os.O_RDWR, 0644)
+			if err != nil {
+				return err.Error()
+			}
+		}
+		fid.file.handle = fp
+	}
+	fid.file.refcnt += 1
+
+	fid.open = true
+	fid.mode = r.fc.Mode
 
 	return ""
 }

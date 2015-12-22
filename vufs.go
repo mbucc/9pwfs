@@ -29,9 +29,10 @@ type File struct {
 	Dir
 	parent *File
 	children map[string]*File
-	// This is always read/write.  The Fid stores if the file was opened read or read/write.
+	// This is always read/write.  The Fid stores the file mode requested by the client.
 	handle *os.File 
 	refcnt int
+	ospath string
 }
 
 type Conn struct {
@@ -201,6 +202,7 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 
 	f := new(File)
 	f.Null()
+	f.ospath = ospath
 
 	f.Qid.Path = stat.Ino
 	f.Qid.Vers = uint32(info.ModTime().UnixNano() / 1000000)
@@ -366,6 +368,7 @@ func New(root string) *VuFs {
 		Tclunk:  vu.rclunk,
 		Twrite:  vu.rwrite,
 		Tread:  vu.rread,
+		Topen:  vu.ropen,
 	}
 
 	return vu

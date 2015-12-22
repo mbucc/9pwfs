@@ -101,8 +101,6 @@ func TestWriteWorks(t *testing.T) {
 	defer fs.Stop()
 	defer c.Close()
 
-	//fs.Chatty(true)
-
 	tf := new(testFile)
 	tf.name = "testwrite.txt"
 	tf.walknames = []string{}
@@ -130,7 +128,7 @@ func TestWriteWorks(t *testing.T) {
 	rx := writeTestFcall(t, c, tx)
 
 	if !bytes.Equal(rx.Data, data) {
-		t.Errorf("bad data\nexp: '%x (%s)'\nact '%x (%s0'", data, data, rx.Data, rx.Data)
+		t.Errorf("bad data\nexp: '%%s=%x (%%s=%s)'\nact '%%x=%x (%%s=%s)'", data, data, rx.Data, rx.Data)
 	}
 
 	if rx.Count != uint32(len(data)) {
