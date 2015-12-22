@@ -111,12 +111,31 @@ func (vu *VuFs) rstat(r *ConnFcall) string {
 	return ""
 }
 
+
+// Vufs only supports READ and WRITE modes.  (CEXEC is equivalent to READ.)
+func checkMode(fc *Fcall) string {
+	// fcall.go:55,79
+	// See const.go:50,61
+	if fc.Perm&DMDIR != 0 && fc.Mode != OREAD {
+		return "invalid mode for a directory"
+	}
+	if fc.Mode&OTRUNC != 0 {
+		return "OTRUNC not supported"
+	}
+	if fc.Mode&ORCLOSE != 0 {
+		return "ORCLOSE not supported"
+	}
+	if fc.Mode&ODIRECT != 0 {
+		return "ODIRECT not supported"
+	}
+	return ""
+}
+
 func (vu *VuFs) rcreate(r *ConnFcall) string {
 
 	var err error
 	var fp *os.File
 
-	// Fid that comes in should point to a directory.
 	fid, found := r.conn.fids[r.fc.Fid]
 	if !found {
 		return "fid not found"
@@ -144,12 +163,9 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 		return "already exists"
 	}
 
-	if r.fc.Perm&DMDIR != 0 && r.fc.Mode&3 != OREAD {
-		return "invalid mode for a directory"
+	if emsg := checkMode(r.fc); emsg != "" {
+		return emsg
 	}
-
-	// fcall.go:55,79
-	// See const.go:50,61
 
 	var mode Perm
 	ospath := filepath.Join(vu.Root, parent.Name, r.fc.Name)
@@ -482,10 +498,12 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 		return "fid not found"
 	}
 
-	m := r.fc.Mode & 3
-	if fid.file.isDir() && m != OREAD {
-		return "invalid mode for a directory"
+	if emsg := checkMode(r.fc); emsg != "" {
+		return emsg
 	}
+
+	m := r.fc.Mode & 3
+
 	if  m&OWRITE == OWRITE {
 		if !CheckPerm(fid.file, fid.uid, DMWRITE) {
 			return "permission denied"
