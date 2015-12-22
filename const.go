@@ -55,7 +55,7 @@ const (
 	OCEXEC    = 32
 	ORCLOSE   = 64
 	ODIRECT   = 128
-	ONONBLOCK = 256
+	//ONONBLOCK = 256  I don't see any mention of blocking Plan 9 man pages.
 	OEXCL     = 0x1000
 	OLOCK     = 0x2000
 	OAPPEND   = 0x4000
