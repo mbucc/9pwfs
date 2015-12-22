@@ -469,6 +469,9 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 				rc.Data = append(rc.Data, b...)
 			}
 			bytesread += n
+			if bytesread >= offset + count {
+				break
+			}
 		}
 	} else {
 
