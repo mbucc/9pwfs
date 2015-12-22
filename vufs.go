@@ -76,6 +76,41 @@ func (fp *File) isDir() bool {
 	return fp.Type&QTDIR != 0;
 }
 
+
+
+func (c *Conn) findfid(id uint32) (*Fid, string) {
+
+	fid, found := c.fids[id]
+
+	if !found {
+		return nil, "fid not found"
+	}
+
+	// File was removed by a client on another connection.
+	if fid.file.ospath == "" {
+		return nil, "phase error"
+	}
+
+	return fid, ""
+}
+
+// Read file system call from connection and push (serialize)
+// onto our one file system call channel.
+func (c *Conn) recv() {
+	for !c.dying {
+		fc, err := ReadFcall(c.rwc)
+		if err == nil {
+			c.srv.fcallchan <- &ConnFcall{c, fc}
+		} else {
+			if !c.dying {
+				c.srv.log("recv() error: " + err.Error())
+			}
+			continue
+		}
+	}
+	c.srv.chat("recv() done")
+}
+
 func (vu *VuFs) Chatty(b bool) {
 	vu.chatty = b
 }
@@ -126,22 +161,7 @@ func (vu *VuFs) fcallhandler() {
 	}
 }
 
-// Read file system call from connection and push (serialize)
-// onto our one file system call channel.
-func (c *Conn) recv() {
-	for !c.dying {
-		fc, err := ReadFcall(c.rwc)
-		if err == nil {
-			c.srv.fcallchan <- &ConnFcall{c, fc}
-		} else {
-			if !c.dying {
-				c.srv.log("recv() error: " + err.Error())
-			}
-			continue
-		}
-	}
-	c.srv.chat("recv() done")
-}
+
 
 // Add connection to connection list and spawn a go routine
 // to process messages received on the new connection.
@@ -375,6 +395,7 @@ func New(root string) *VuFs {
 		Twrite:  vu.rwrite,
 		Tread:  vu.rread,
 		Topen:  vu.ropen,
+		Tremove:  vu.rremove,
 	}
 
 	return vu

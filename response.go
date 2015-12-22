@@ -81,9 +81,14 @@ func (vu *VuFs) rattach(r *ConnFcall) string {
 		return "authentication not supported"
 	}
 
-	if _, inuse := r.conn.fids[r.fc.Fid]; inuse {
+	_, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg == "" {
 		return "fid already in use on this connection"
 	}
+	if emsg == "phase shift" {
+		return emsg
+	}
+
 
 	fid := new(Fid)
 	fid.file = vu.tree.root
@@ -100,9 +105,9 @@ func (vu *VuFs) rauth(r *ConnFcall) string {
 func (vu *VuFs) rstat(r *ConnFcall) string {
 	var err error
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 	rc.Stat, err = fid.file.Bytes()
 	if err != nil {
@@ -136,9 +141,9 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	var err error
 	var fp *os.File
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 	parent := fid.file
 
@@ -158,8 +163,7 @@ func (vu *VuFs) rcreate(r *ConnFcall) string {
 	// TODO(mbucc) Decide and enforce what characters are valid in filenames.
 
 	// File should not already exist.
-	_, found = parent.children[r.fc.Name]
-	if found {
+	if _, found := parent.children[r.fc.Name]; found {
 		return "already exists"
 	}
 
@@ -311,9 +315,9 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 
 	tx := r.fc
 
-	fid, found := r.conn.fids[tx.Fid]
-	if !found {
-		return fmt.Sprintf("fid %d not found", tx.Fid)
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 
 	if len(tx.Wname) > 0 && ! fid.file.isDir() {
@@ -330,13 +334,13 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 		return ""
 	}
 
-	_, found = r.conn.fids[tx.Newfid]
-	if found {
+	if _, found := r.conn.fids[tx.Newfid]; found {
 		return "already in use"
 	}
 
 	f := fid.file
 	for i, wn := range tx.Wname {
+		var found bool
 
 		if wn == ".." {
 			f = f.parent
@@ -374,9 +378,9 @@ func (vu *VuFs) rwalk(r *ConnFcall) string {
 
 func (vu *VuFs) rclunk(r *ConnFcall) string {
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 
 	fid.file.refcnt -= 1
@@ -392,9 +396,9 @@ func (vu *VuFs) rclunk(r *ConnFcall) string {
 
 func (vu *VuFs) rwrite(r *ConnFcall) string {
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 
 	if !fid.open {
@@ -431,9 +435,9 @@ func (vu *VuFs) rwrite(r *ConnFcall) string {
 
 func (vu *VuFs) rread(r *ConnFcall) string {
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 
 	if !fid.open {
@@ -496,9 +500,9 @@ func (vu *VuFs) rread(r *ConnFcall) string {
 func (vu *VuFs) ropen(r *ConnFcall) string {
 	var err error
 
-	fid, found := r.conn.fids[r.fc.Fid]
-	if !found {
-		return "fid not found"
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
 	}
 
 	if emsg := checkMode(r.fc); emsg != "" {
@@ -551,3 +555,36 @@ func (vu *VuFs) ropen(r *ConnFcall) string {
 
 	return ""
 }
+
+
+
+func (vu *VuFs) rremove(r *ConnFcall) string {
+
+	fid, emsg := r.conn.findfid(r.fc.Fid)
+	if emsg != "" {
+		return emsg
+	}
+
+	if !CheckPerm(fid.file.parent, fid.uid, DMWRITE) {
+		return "permission denied"
+	}
+
+	if fid.file.handle != nil {
+		if err := fid.file.handle.Close(); err != nil {
+			return err.Error()
+		}
+	}
+
+	if err := os.Remove(fid.file.ospath); err != nil {
+		return err.Error()
+	}
+
+	delete(fid.file.parent.children, fid.file.Name)
+
+	*(fid.file) = File{}
+
+	delete(r.conn.fids, r.fc.Fid)
+
+	return ""
+}
+

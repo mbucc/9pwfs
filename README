@@ -130,9 +130,9 @@ flush
   [] more details.
 
 remove
-  [] remove the file represented by fid and clunk fid
-  [] requres write perm in parent directory
-  [] remove file immediately, even if open by other clients
+  [x] remove the file represented by fid and clunk fid
+  [x] requres write perm in parent directory
+  [x] remove file immediately, even if open by other clients
 
 wstat
   [] name can be changed by anyone with write permission in directory
