@@ -17,7 +17,7 @@ type Fid struct {
 	uid  string
 	open bool
 	// See const.go:50,61
-	mode    uint8
+	mode uint8
 }
 
 // A File represents a file in the file system, and is unique across the file server.
@@ -27,10 +27,10 @@ type Fid struct {
 type File struct {
 	// dir.go:60,72
 	Dir
-	parent *File
+	parent   *File
 	children map[string]*File
 	// This is always read/write.  The Fid stores the file mode requested by the client.
-	handle *os.File 
+	handle *os.File
 	refcnt int
 	ospath string
 }
@@ -70,13 +70,10 @@ type VuFs struct {
 	tree          *Tree
 }
 
-
 // Return true if file is a directory, false otherwise.
 func (fp *File) isDir() bool {
-	return fp.Type&QTDIR != 0;
+	return fp.Type&QTDIR != 0
 }
-
-
 
 func (c *Conn) findfid(id uint32) (*Fid, string) {
 
@@ -99,7 +96,7 @@ func (c *Conn) findfid(id uint32) (*Fid, string) {
 func (c *Conn) recv() {
 	for !c.dying {
 		fc, err := ReadFcall(c.rwc)
-		if err == nil {
+		if err == nil || err == io.EOF {
 			c.srv.fcallchan <- &ConnFcall{c, fc}
 		} else {
 			if !c.dying {
@@ -131,6 +128,9 @@ func (vu *VuFs) fcallhandler() {
 	for !vu.dying {
 		x, more := <-vu.fcallchan
 		if more {
+			if x.fc == nil {
+				continue
+			}
 			emsg = ""
 			rc.Reset()
 			vu.chat("<- " + x.fc.String())
@@ -161,8 +161,6 @@ func (vu *VuFs) fcallhandler() {
 	}
 }
 
-
-
 // Add connection to connection list and spawn a go routine
 // to process messages received on the new connection.
 func (vu *VuFs) connhandler() {
@@ -182,26 +180,6 @@ func (vu *VuFs) connhandler() {
 			return
 		}
 	}
-}
-
-// Serialize connection requests by fanning-in to one channel.
-func (vu *VuFs) listen() error {
-	var err error
-	vu.chat("start listening for connections")
-	for {
-		c, err := vu.listener.Accept()
-		if err != nil {
-			break
-		}
-		vu.chat("new connection")
-		vu.connchan <- c
-	}
-	if err != nil {
-		vu.chat("error!")
-	}
-	vu.chat("stop listening for connections")
-	vu.connchanDone <- true
-	return nil
 }
 
 func info2stat(info os.FileInfo) (*syscall.Stat_t, error) {
@@ -273,7 +251,6 @@ func (vu *VuFs) buildfile(ospath string, info os.FileInfo) (*File, error) {
 	return f, nil
 }
 
-
 func (vu *VuFs) buildnode(path string, info os.FileInfo, err error) error {
 
 	if err != nil {
@@ -302,7 +279,7 @@ func (vu *VuFs) buildtree() error {
 	if err != nil {
 		return err
 	}
-	
+
 	f, found := loadmap[vu.Root]
 	if !found {
 		return fmt.Errorf("didn't load file for root dir '%s'", vu.Root)
@@ -310,26 +287,25 @@ func (vu *VuFs) buildtree() error {
 
 	vu.tree = &Tree{f}
 
-    	//t1 := time.Now()
+	//t1 := time.Now()
 
-/*
-// TODO: Too chatty for tests; put in read-only /stats file (or similar)
-	if len(loadmap) == 1 {
-		vu.log(fmt.Sprintf("loaded 1 file in %v", t1.Sub(t0)))
-	} else {
-		vu.log(fmt.Sprintf("Loaded %d files in %v", len(loadmap), t1.Sub(t0)))
-	}
-*/
+	/*
+	   // TODO: Too chatty for tests; put in read-only /stats file (or similar)
+	   	if len(loadmap) == 1 {
+	   		vu.log(fmt.Sprintf("loaded 1 file in %v", t1.Sub(t0)))
+	   	} else {
+	   		vu.log(fmt.Sprintf("Loaded %d files in %v", len(loadmap), t1.Sub(t0)))
+	   	}
+	*/
 
 	return nil
 }
 
 // Stop listening, drain channels, wait any in-progress work to finish, and shut down.
 func (vu *VuFs) Stop() {
-	vu.Lock()
-	defer vu.Unlock()
 
 	vu.dying = true
+
 	close(vu.connchan)
 	for _, c := range vu.connections {
 		c.dying = true
@@ -352,8 +328,6 @@ func (vu *VuFs) Stop() {
 
 // Start listening for connections.
 func (vu *VuFs) Start(ntype, addr string) error {
-	vu.Lock()
-	defer vu.Unlock()
 
 	vu.chat("start")
 
@@ -362,13 +336,31 @@ func (vu *VuFs) Start(ntype, addr string) error {
 		return err
 	}
 
+	vu.chat("start listening for '" + ntype + "' connections on '" + addr + "'")
+
 	vu.listener, err = net.Listen(ntype, addr)
 	if err != nil {
 		return err
 	}
+
 	go vu.connhandler()
-	go vu.listen()
+
 	go vu.fcallhandler()
+
+	for {
+		c, err := vu.listener.Accept()
+		if err != nil || vu.dying {
+			break
+		}
+		vu.chat("new connection")
+		vu.connchan <- c
+	}
+	if err != nil {
+		vu.chat("error!")
+	}
+	vu.chat("stop listening for connections")
+	vu.connchanDone <- true
+
 	return nil
 }
 
@@ -390,11 +382,11 @@ func New(root string) *VuFs {
 		Tauth:    vu.rauth,
 		Tstat:    vu.rstat,
 		Tcreate:  vu.rcreate,
-		Twalk:  vu.rwalk,
-		Tclunk:  vu.rclunk,
-		Twrite:  vu.rwrite,
-		Tread:  vu.rread,
-		Topen:  vu.ropen,
+		Twalk:    vu.rwalk,
+		Tclunk:   vu.rclunk,
+		Twrite:   vu.rwrite,
+		Tread:    vu.rread,
+		Topen:    vu.ropen,
 		Tremove:  vu.rremove,
 	}
 

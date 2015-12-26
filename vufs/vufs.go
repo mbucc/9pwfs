@@ -6,35 +6,30 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/mbucc/vufs"
 	"log"
 	"os"
 )
 
-var addr = flag.String("addr", ":5640", "network address")
+var addr = flag.String("addr", vufs.DEFAULTPORT, "network address")
 var debug = flag.Int("debug", 0, "print debug messages")
 var root = flag.String("root", "/", "root filesystem")
 
 func main() {
-	var err error
+
 	flag.Parse()
-	fs := new(vufs.VuFs)
-	fs.Id = "vufs"
-	fs.Root = *root
-	fs.Debuglevel = *debug
-	fs.Upool, err  = vufs.NewVusers(*root)
+
+	fs := vufs.New(*root)
+
+	if *debug != 0 {
+		fs.Chatty(true)
+	}
+
+	err := fs.Start("tcp", *addr)
+
 	if err != nil {
 		log.Println(err)
 		os.Exit(1)
 	}
 
-	fs.Start(fs)
-
-	fmt.Print("vufs starting\n")
-	err = fs.StartNetListener("tcp", *addr)
-	if err != nil {
-		log.Println(err)
-		os.Exit(1)
-	}
 }
