@@ -59,8 +59,10 @@ func (vu *VuFs) rversion(r *ConnFcall) string {
 	done := false
 	for ver != "unknown" && !done {
 		select {
-		case <-vu.fcallchan:
-			return "new session started, dropping this request"
+		case tmp := <-vu.fcallchan:
+			if tmp.fc != nil {
+				return "new session started, dropping " + tmp.fc.String()
+			}
 		default:
 			done = true
 		}
@@ -77,7 +79,7 @@ func (vu *VuFs) rversion(r *ConnFcall) string {
 func (vu *VuFs) rattach(r *ConnFcall) string {
 
 	// To simplify things, we only allow an attach to root of file server.
-	if r.fc.Aname != "/" {
+	if r.fc.Aname != "/" && r.fc.Aname != "" {
 		return "can only attach to root directory"
 	}
 
